@@ -28,10 +28,10 @@
         <header class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                    <span>高可用现场签到核销系统</span>
+                    <span>FACT Conference APAC现场签到核销系统</span>
                     <span id="status-badge" class="text-xs font-normal px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">系统就绪</span>
                 </h1>
-                <p class="text-sm text-slate-500 mt-1">支持：摄像头扫码 / 硬件扫码枪 / 姓名、部门、邮箱快速搜索核销</p>
+                <p class="text-sm text-slate-500 mt-1">支持：摄像头扫码 / 姓名、部门、邮箱快速搜索核销</p>
             </div>
             <div class="flex gap-2 w-full md:w-auto">
                 <button onclick="switchTab('scanner')" id="tab-scanner" class="flex-1 md:flex-none px-4 py-2 bg-blue-600 text-white font-medium rounded-lg shadow-sm hover:bg-blue-700 transition">现场签到窗口</button>
@@ -61,13 +61,13 @@
                         </div>
                     </div>
 
-                    <!-- 方案 B：降级应急手动输入/扫码枪 -->
+                    <!-- 方案 B：降级应急手动输入 -->
                     <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-3">
                         <div class="flex justify-between items-center border-b pb-2">
-                            <h2 class="text-base font-semibold text-slate-800">方案 B：扫码枪 / 手动验证</h2>
+                            <h2 class="text-base font-semibold text-slate-800">方案 B：手动验证</h2>
                             <span class="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-medium">应急降级</span>
                         </div>
-                        <p class="text-xs text-slate-400">支持扫码枪输入，或直接输入编号、姓名、邮箱：</p>
+                        <p class="text-xs text-slate-400">支持直接输入编号、姓名、邮箱：</p>
 
                         <form onsubmit="handleManualVerify(event)" class="space-y-2">
                             <input type="text" id="manual-input" placeholder="输入编号 / 姓名 / 邮箱后回车" autocomplete="off" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono transition">
