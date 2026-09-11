@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高可用现场签到与核销系统</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 客户端摄像头扫码库 Html5-QRCode -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- 二维码生成库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- Excel / CSV 解析库 SheetJS -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        /* 针对扫码框 Video 元素的适配补丁 */
+        #reader video {
+            object-fit: cover !important;
+            border-radius: 0.5rem;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto space-y-6">
+        <!-- 顶栏 -->
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                    <span>高可用现场签到核销系统</span>
+                    <span id="status-badge" class="text-xs font-normal px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">系统就绪</span>
+                </h1>
+                <p class="text-sm text-slate-500 mt-1">支持：摄像头扫码 / 硬件扫码枪 / 姓名、部门、邮箱快速搜索核销</p>
+            </div>
+            <div class="flex gap-2 w-full md:w-auto">
+                <button onclick="switchTab('scanner')" id="tab-scanner" class="flex-1 md:flex-none px-4 py-2 bg-blue-600 text-white font-medium rounded-lg shadow-sm hover:bg-blue-700 transition">现场签到窗口</button>
+                <button onclick="switchTab('manage')" id="tab-manage" class="flex-1 md:flex-none px-4 py-2 bg-slate-200 text-slate-700 font-medium rounded-lg hover:bg-slate-300 transition">名单管理与二维码分发</button>
+            </div>
+        </header>
+
+        <!-- 视图 1：现场签到主窗口 -->
+        <main id="view-scanner" class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                <!-- 左侧：扫码设备控制区 -->
+                <div class="md:col-span-1 space-y-6">
+                    <!-- 方案 A：摄像头扫码 -->
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col items-center">
+                        <div class="flex justify-between items-center w-full mb-3 border-b pb-2">
+                            <h2 class="text-base font-semibold text-slate-800">方案 A：摄像头扫码</h2>
+                            <span class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">自动识别</span>
+                        </div>
+
+                        <div id="reader" class="w-full bg-slate-900 rounded-lg overflow-hidden min-h-[220px] flex items-center justify-center text-slate-500 text-xs">
+                            <span id="reader-placeholder">摄像头未开启</span>
+                        </div>
+
+                        <div class="flex gap-2 w-full mt-4">
+                            <button onclick="toggleScanner()" id="btn-toggle-cam" class="flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition text-sm">开启摄像头</button>
+                        </div>
+                    </div>
+
+                    <!-- 方案 B：降级应急手动输入/扫码枪 -->
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-3">
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <h2 class="text-base font-semibold text-slate-800">方案 B：扫码枪 / 手动验证</h2>
+                            <span class="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-medium">应急降级</span>
+                        </div>
+                        <p class="text-xs text-slate-400">支持扫码枪输入，或直接输入 UID、姓名、邮箱：</p>
+
+                        <form onsubmit="handleManualVerify(event)" class="space-y-2">
+                            <input type="text" id="manual-input" placeholder="输入 UID / 姓名 / 邮箱后回车" autocomplete="off" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono transition">
+                            <button type="submit" class="w-full bg-slate-800 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition">快速核销</button>
+                        </form>
+                    </div>
+
+                    <!-- 反馈提示窗口 -->
+                    <div id="scan-result" class="hidden p-4 rounded-xl text-center text-sm font-semibold border transition-all shadow-sm"></div>
+                </div>
+
+                <!-- 右侧：实时看板与模糊检索列表 -->
+                <div class="md:col-span-2 space-y-6">
+                    <!-- 数据统计看板 -->
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                            <p class="text-xs text-slate-500">应到总人数</p>
+                            <p class="text-2xl font-bold text-slate-800 mt-1" id="stat-total">0</p>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                            <p class="text-xs text-slate-500">已签到</p>
+                            <p class="text-2xl font-bold text-emerald-600 mt-1" id="stat-checked">0</p>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                            <p class="text-xs text-slate-500">未签到</p>
+                            <p class="text-2xl font-bold text-rose-500 mt-1" id="stat-unchecked">0</p>
+                        </div>
+                    </div>
+
+                    <!-- 实时列表 + 方案 C（快速搜索手签） -->
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                            <div class="flex items-center gap-2">
+                                <span class="font-semibold text-slate-800">参会人员名单</span>
+                                <span class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">方案 C：检索手签</span>
+                            </div>
+                            <div class="flex gap-2 w-full sm:w-auto text-xs">
+                                <button onclick="clearAllUsers()" class="text-slate-500 hover:text-rose-600 hover:underline">清空名单</button>
+                                <span class="text-slate-300">|</span>
+                                <button onclick="resetData()" class="text-rose-600 hover:underline">重置状态</button>
+                                <span class="text-slate-300">|</span>
+                                <button onclick="exportCSV()" class="text-blue-600 font-semibold hover:underline">导出签到表 (CSV)</button>
+                            </div>
+                        </div>
+
+                        <!-- 模糊搜索框 -->
+                        <div class="p-3 bg-slate-50 border-b border-slate-100">
+                            <input type="text" id="search-keyword" oninput="debouncedRenderTable()" placeholder="搜索：输入姓名、部门、邮箱或 UID..." class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        </div>
+
+                        <div class="max-h-96 overflow-y-auto">
+                            <table class="w-full text-left border-collapse text-sm">
+                                <thead class="sticky top-0 bg-slate-50 shadow-sm z-10">
+                                    <tr class="text-slate-500 border-b">
+                                        <th class="p-3">UID</th>
+                                        <th class="p-3">姓名</th>
+                                        <th class="p-3">部门</th>
+                                        <th class="p-3">邮箱</th>
+                                        <th class="p-3">状态</th>
+                                        <th class="p-3">时间</th>
+                                        <th class="p-3 text-right">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-body" class="divide-y divide-slate-100">
+                                    <!-- 动态表格内容 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 视图 2：名单管理与二维码分发 -->
+        <main id="view-manage" class="hidden space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- 名单导入区域 -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4 md:col-span-1">
+                    <h2 class="text-lg font-semibold text-slate-800 border-b pb-2">录入/导入邀请名单</h2>
+
+                    <!-- 1. Excel/CSV 文件上传区 -->
+                    <div class="space-y-2">
+                        <label class="block text-xs font-medium text-slate-700">方式一：选择 Excel/CSV 表格上传</label>
+                        <div class="border-2 border-dashed border-slate-300 rounded-lg p-5 text-center bg-slate-50 hover:bg-slate-100 transition cursor-pointer" onclick="document.getElementById('excel-file-input').click()">
+                            <svg class="mx-auto h-8 w-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 0115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                            </svg>
+                            <p class="mt-2 text-xs font-semibold text-blue-600">点击上传 Excel / CSV 文件</p>
+                            <p class="text-[10px] text-slate-400 mt-1">自动解析列：姓名、部门、邮箱、UID/工号</p>
+                        </div>
+                        <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event)">
+                    </div>
+
+                    <div class="relative flex py-1 items-center">
+                        <div class="flex-grow border-t border-slate-200"></div>
+                        <span class="flex-shrink mx-2 text-xs text-slate-400">或</span>
+                        <div class="flex-grow border-t border-slate-200"></div>
+                    </div>
+
+                    <!-- 2. 文本批量粘贴区 -->
+                    <div class="space-y-2">
+                        <label class="block text-xs font-medium text-slate-700">方式二：手动文本粘贴</label>
+                        <p class="text-[10px] text-slate-400">支持逗号或空格分隔：姓名,部门,邮箱</p>
+                        <textarea id="batch-import-input" rows="5" placeholder="张三,研发部,zhangsan@company.com&#10;李四,市场部,lisi@company.com" class="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        <button onclick="batchImportText()" class="w-full bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition">批量导入文本</button>
+                    </div>
+                </div>
+
+                <!-- 专属二维码卡片 -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 md:col-span-2 space-y-4">
+                    <div class="flex justify-between items-center border-b pb-2">
+                        <h2 class="text-lg font-semibold text-slate-800">预发个人专属二维码卡片</h2>
+                        <span class="text-xs text-slate-400">可截图发送给参会人员保存</span>
+                    </div>
+                    <div id="tickets-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[520px] overflow-y-auto p-1">
+                        <!-- 动态生成二维码卡片 -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+    // ---------------- 1. 初始化 Supabase ----------------
+    // 建议在生产环境中将密钥配置为环境变量，或在 Supabase 控制台中开启 RLS (Row Level Security)
+    const SUPABASE_URL = 'https://tjeinpfnpurplkicnelj.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_-iw4OqsuippfTivfBXJMHw_iAiFki_L';
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // 全局变量声明（仅在此处声明一次）
+    let users = [];
+    let html5QrcodeScanner = null;
+    let isScannerRunning = false;
+    let debounceTimer = null;
+    let audioCtx = null;
+
+    // ---------------- 2. 页面加载与实时订阅 ----------------
+    window.onload = async function() {
+        await loadDataFromCloud();   // 从 Supabase 加载云端数据
+        subscribeRealtimeChanges();  // 开启多端实时监听
+        switchTab('scanner');
+    };
+
+    // 2.1 从 Supabase 抓取全量数据
+    async function loadDataFromCloud() {
+        const { data, error } = await supabaseClient
+            .from('checkin_users')
+            .select('*')
+            .order('id', { ascending: true });
+
+        if (error) {
+            console.error('加载云端数据失败:', error);
+            alert('连接云端数据库失败，请检查网络或配置！');
+            return;
+        }
+
+        users = data.map(u => ({
+            id: u.id,
+            uid: u.uid,
+            name: u.name,
+            dept: u.dept,
+            email: u.email,
+            checked: u.checked,
+            checkTime: u.check_time
+        }));
+
+        renderTable();
+        renderStats();
+        renderTickets();
+    }
+
+    // 2.2 订阅云端数据变动 (多手机/多设备实时同步)
+    function subscribeRealtimeChanges() {
+        supabaseClient
+            .channel('public:checkin_users')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'checkin_users' }, async () => {
+                await loadDataFromCloud();
+            })
+            .subscribe();
+    }
+
+    // ---------------- 3. 音效与 Tab 切换 ----------------
+    function playBeep(type) {
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            if (type === 'success') {
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.15);
+            } else if (type === 'warning') {
+                osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.25);
+            } else {
+                osc.frequency.setValueAtTime(220, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.35);
+            }
+        } catch(e) {
+            console.log("Audio not supported or blocked");
+        }
+    }
+
+    function switchTab(tab) {
+        const scannerView = document.getElementById('view-scanner');
+        const manageView = document.getElementById('view-manage');
+        const btnScanner = document.getElementById('tab-scanner');
+        const btnManage = document.getElementById('tab-manage');
+
+        if (tab === 'scanner') {
+            scannerView.classList.remove('hidden');
+            manageView.classList.add('hidden');
+            btnScanner.className = "flex-1 md:flex-none px-4 py-2 bg-blue-600 text-white font-medium rounded-lg shadow-sm hover:bg-blue-700 transition";
+            btnManage.className = "flex-1 md:flex-none px-4 py-2 bg-slate-200 text-slate-700 font-medium rounded-lg hover:bg-slate-300 transition";
+        } else {
+            scannerView.classList.add('hidden');
+            manageView.classList.remove('hidden');
+            btnManage.className = "flex-1 md:flex-none px-4 py-2 bg-blue-600 text-white font-medium rounded-lg shadow-sm hover:bg-blue-700 transition";
+            btnScanner.className = "flex-1 md:flex-none px-4 py-2 bg-slate-200 text-slate-700 font-medium rounded-lg hover:bg-slate-300 transition";
+        }
+    }
+
+    // ---------------- 4. 签到核销逻辑 ----------------
+    async function processCheckin(keyword) {
+        const resultBox = document.getElementById('scan-result');
+        if (!resultBox) return;
+        resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border transition-all block";
+
+        const target = keyword.trim().toLowerCase();
+        if (!target) return;
+
+        const user = users.find(u =>
+            u.uid.toLowerCase() === target ||
+            (u.email && u.email.toLowerCase() === target) ||
+            u.name.toLowerCase() === target
+        );
+
+        if (!user) {
+            playBeep('error');
+            resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-rose-100 text-rose-800 border-rose-200";
+            resultBox.innerText = `❌ 验证失败：未找到匹配人员 (${keyword})`;
+        } else if (user.checked) {
+            playBeep('warning');
+            resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-amber-100 text-amber-800 border-amber-200";
+            resultBox.innerText = `⚠️ 重复签到：${user.name} (${user.dept || '未知部门'}) 已于 ${user.checkTime} 入场`;
+        } else {
+            playBeep('success');
+            const now = new Date();
+            const timeStr = now.getHours().toString().padStart(2, '0') + ':' +
+                            now.getMinutes().toString().padStart(2, '0') + ':' +
+                            now.getSeconds().toString().padStart(2, '0');
+
+            const { error } = await supabaseClient
+                .from('checkin_users')
+                .update({ checked: true, check_time: timeStr })
+                .eq('uid', user.uid);
+
+            if (error) {
+                alert('核销失败：' + error.message);
+                return;
+            }
+
+            resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-emerald-100 text-emerald-800 border-emerald-200";
+            resultBox.innerText = `✅ 签到成功！欢迎：${user.name}（${user.dept || '无部门信息'}）`;
+        }
+
+        setTimeout(() => { resultBox.classList.add('hidden'); }, 4000);
+    }
+
+    function handleManualVerify(event) {
+        event.preventDefault();
+        const input = document.getElementById('manual-input');
+        const val = input.value.trim();
+        if (!val) return;
+        processCheckin(val);
+        input.value = '';
+        input.focus();
+    }
+
+    async function toggleCheckinByUID(uid) {
+        const user = users.find(u => u.uid === uid);
+        if (!user) return;
+
+        let newChecked = !user.checked;
+        let newTime = null;
+
+        if (user.checked) {
+            if (!confirm(`是否取消 ${user.name} 的签到状态？`)) return;
+        } else {
+            const now = new Date();
+            newTime = now.getHours().toString().padStart(2, '0') + ':' +
+                     now.getMinutes().toString().padStart(2, '0') + ':' +
+                     now.getSeconds().toString().padStart(2, '0');
+        }
+
+        const { error } = await supabaseClient
+            .from('checkin_users')
+            .update({ checked: newChecked, check_time: newTime })
+            .eq('uid', uid);
+
+        if (error) alert('操作失败: ' + error.message);
+    }
+
+    // ---------------- 5. 摄像头扫码功能 ----------------
+    async function toggleScanner() {
+        const btn = document.getElementById('btn-toggle-cam');
+        const placeholder = document.getElementById('reader-placeholder');
+
+        if (isScannerRunning) {
+            if (html5QrcodeScanner) {
+                await html5QrcodeScanner.stop();
+                html5QrcodeScanner = null;
+            }
+            isScannerRunning = false;
+            btn.innerText = "开启摄像头";
+            btn.className = "flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition text-sm";
+            if (placeholder) placeholder.style.display = "block";
+            return;
+        }
+
+        try {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error("浏览器环境不支持或无权限");
+            }
+            await navigator.mediaDevices.getUserMedia({ video: true });
+            const devices = await Html5Qrcode.getCameras();
+            if (!devices || devices.length === 0) throw new Error("未识别到摄像头");
+
+            if (placeholder) placeholder.style.display = "none";
+
+            html5QrcodeScanner = new Html5Qrcode("reader");
+            const cameraId = devices[devices.length - 1].id;
+
+            await html5QrcodeScanner.start(
+                cameraId,
+                { fps: 10, qrbox: { width: 180, height: 180 } },
+                (text) => processCheckin(text),
+                () => {}
+            );
+
+            isScannerRunning = true;
+            btn.innerText = "关闭摄像头";
+            btn.className = "flex-1 bg-rose-600 text-white py-2 rounded-lg font-medium hover:bg-rose-700 transition text-sm";
+
+        } catch (err) {
+            alert(`摄像头无法启动：${err.message || err}\n您可以继续使用手动输入或外接扫码枪模式！`);
+            isScannerRunning = false;
+            btn.innerText = "开启摄像头";
+            if (placeholder) placeholder.style.display = "block";
+        }
+    }
+
+    // ---------------- 6. 数据导入 (上传至 Supabase) ----------------
+    async function saveUsersToCloud(newUsersList) {
+        const rows = newUsersList.map(u => ({
+            uid: u.uid,
+            name: u.name,
+            dept: u.dept,
+            email: u.email,
+            checked: false,
+            check_time: null
+        }));
+
+        const { error } = await supabaseClient
+            .from('checkin_users')
+            .insert(rows);
+
+        if (error) {
+            alert('导入云端失败: ' + error.message);
+        } else {
+            alert(`成功导入 ${rows.length} 条记录到云端！`);
+        }
+    }
+
+    function handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                if (jsonData.length < 2) return alert("表格为空或缺少数据！");
+
+                const headers = jsonData[0].map(h => String(h || '').trim().toLowerCase());
+                let nameIdx = headers.findIndex(h => h.includes('姓名') || h.includes('name'));
+                let deptIdx = headers.findIndex(h => h.includes('部门') || h.includes('dept'));
+                let emailIdx = headers.findIndex(h => h.includes('邮箱') || h.includes('mail'));
+                let uidIdx = headers.findIndex(h => h.includes('uid') || h.includes('编号'));
+
+                if (nameIdx === -1) nameIdx = 0;
+
+                let pendingUsers = [];
+                for (let i = 1; i < jsonData.length; i++) {
+                    const row = jsonData[i];
+                    if (!row || row.length === 0) continue;
+
+                    const name = row[nameIdx] ? String(row[nameIdx]).trim() : '';
+                    const dept = (deptIdx !== -1 && row[deptIdx]) ? String(row[deptIdx]).trim() : '';
+                    const email = (emailIdx !== -1 && row[emailIdx]) ? String(row[emailIdx]).trim() : '';
+                    let uid = (uidIdx !== -1 && row[uidIdx]) ? String(row[uidIdx]).trim() : '';
+
+                    if (name) {
+                        if (!uid) uid = `VIP-${1001 + users.length + pendingUsers.length}`;
+                        pendingUsers.push({ uid, name, dept, email });
+                    }
+                }
+
+                if (pendingUsers.length > 0) {
+                    await saveUsersToCloud(pendingUsers);
+                }
+                event.target.value = '';
+            } catch (err) {
+                alert("文件解析失败！");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    async function batchImportText() {
+        const input = document.getElementById('batch-import-input');
+        const text = input.value.trim();
+        if (!text) return alert("请输入需要导入的内容");
+
+        const lines = text.split('\n');
+        let pendingUsers = [];
+        lines.forEach(line => {
+            if (!line.trim()) return;
+            const parts = line.split(/[,，\t]/);
+            if (parts.length >= 1) {
+                const name = parts[0].trim();
+                const dept = parts[1] ? parts[1].trim() : '';
+                const email = parts[2] ? parts[2].trim() : '';
+
+                if (name) {
+                    const newUid = `VIP-${1001 + users.length + pendingUsers.length}`;
+                    pendingUsers.push({ uid: newUid, name, dept, email });
+                }
+            }
+        });
+
+        if (pendingUsers.length > 0) {
+            await saveUsersToCloud(pendingUsers);
+            input.value = '';
+        }
+    }
+
+    // ---------------- 7. UI 渲染与数据管理 ----------------
+    function debouncedRenderTable() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(renderTable, 200);
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('table-body');
+        if (!tbody) return;
+        const keyword = (document.getElementById('search-keyword')?.value || '').trim().toLowerCase();
+        tbody.innerHTML = '';
+
+        const filteredUsers = users.filter(u =>
+            u.name.toLowerCase().includes(keyword) ||
+            (u.dept && u.dept.toLowerCase().includes(keyword)) ||
+            (u.email && u.email.toLowerCase().includes(keyword)) ||
+            u.uid.toLowerCase().includes(keyword)
+        );
+
+        if (filteredUsers.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400 text-xs">没有找到匹配的参会记录</td></tr>`;
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        filteredUsers.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-50 transition";
+            tr.innerHTML = `
+                <td class="p-3 font-mono text-xs font-semibold text-slate-600">${item.uid}</td>
+                <td class="p-3 font-medium text-slate-800">${item.name}</td>
+                <td class="p-3 text-xs text-slate-600">${item.dept || '-'}</td>
+                <td class="p-3 font-mono text-xs text-slate-500">${item.email || '-'}</td>
+                <td class="p-3">
+                    ${item.checked
+                        ? `<span class="px-2 py-0.5 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">已签到</span>`
+                        : `<span class="px-2 py-0.5 text-xs rounded bg-slate-100 text-slate-500 font-medium">未签到</span>`
+                    }
+                </td>
+                <td class="p-3 text-xs font-mono text-slate-500">${item.checkTime || '--'}</td>
+                <td class="p-3 text-right">
+                    <button onclick="toggleCheckinByUID('${item.uid}')" class="px-2.5 py-1 text-xs rounded font-medium border transition ${
+                        item.checked
+                        ? 'border-slate-200 text-slate-500 hover:bg-slate-100'
+                        : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 shadow-sm'
+                    }">
+                        ${item.checked ? '撤销' : '签到'}
+                    </button>
+                </td>
+            `;
+            fragment.appendChild(tr);
+        });
+        tbody.appendChild(fragment);
+    }
+
+    function renderStats() {
+        const total = users.length;
+        const checked = users.filter(u => u.checked).length;
+        if (document.getElementById('stat-total')) document.getElementById('stat-total').innerText = total;
+        if (document.getElementById('stat-checked')) document.getElementById('stat-checked').innerText = checked;
+        if (document.getElementById('stat-unchecked')) document.getElementById('stat-unchecked').innerText = total - checked;
+    }
+
+    function renderTickets() {
+        const container = document.getElementById('tickets-container');
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (users.length === 0) {
+            container.innerHTML = `<p class="col-span-full text-center text-xs text-slate-400 py-8">暂无参会人员数据</p>`;
+            return;
+        }
+
+        users.forEach((u, index) => {
+            const card = document.createElement('div');
+            card.className = "p-3 border border-slate-200 rounded-xl bg-slate-50 flex flex-col items-center space-y-2 shadow-sm hover:shadow transition";
+            const qrId = `ticket-qr-${index}`;
+            card.innerHTML = `
+                <div class="text-center w-full">
+                    <p class="font-bold text-slate-800 text-sm truncate">${u.name}</p>
+                    <p class="text-xs text-slate-500 truncate">${u.dept || '-'}</p>
+                    <p class="text-[11px] text-slate-400 font-mono truncate">${u.email || '-'}</p>
+                </div>
+                <div id="${qrId}" class="p-1.5 bg-white border border-slate-200 rounded shadow-inner"></div>
+                <p class="text-[10px] text-slate-400 font-mono">${u.uid}</p>
+            `;
+            container.appendChild(card);
+
+            setTimeout(() => {
+                const el = document.getElementById(qrId);
+                if (el) {
+                    el.innerHTML = '';
+                    new QRCode(el, {
+                        text: u.uid,
+                        width: 90,
+                        height: 90,
+                        correctLevel: QRCode.CorrectLevel.M
+                    });
+                }
+            }, 30 * index);
+        });
+    }
+
+    // ---------------- 8. 清空与重置 ----------------
+    async function resetData() {
+        if (confirm("是否重置所有人的签到状态？")) {
+            const { error } = await supabaseClient
+                .from('checkin_users')
+                .update({ checked: false, check_time: null })
+                .neq('uid', '');
+
+            if (error) alert('重置失败: ' + error.message);
+        }
+    }
+
+    async function clearAllUsers() {
+        if (confirm("确定要清空整张云端人员名单吗？此操作无法撤销。")) {
+            const { error } = await supabaseClient
+                .from('checkin_users')
+                .delete()
+                .neq('uid', '');
+
+            if (error) alert('清空失败: ' + error.message);
+        }
+    }
+
+    function exportCSV() {
+        if (users.length === 0) return alert("暂无数据可导出");
+
+        let csv = "\uFEFFUID,姓名,部门,邮箱,签到状态,签到时间\n";
+        users.forEach(u => {
+            csv += `"${u.uid}","${u.name}","${u.dept || '-'}","${u.email || '-'}","${u.checked ? '已签到' : '未签到'}","${u.checkTime || '--'}"\n`;
+        });
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.setAttribute("download", `签到结果导出_${new Date().toISOString().slice(0,10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+</script>
+</body>
+</html>
