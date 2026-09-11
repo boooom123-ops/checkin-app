@@ -159,6 +159,8 @@
                             <p class="text-[10px] text-slate-400 mt-1">自动解析列：姓名、部门、邮箱、UID/工号</p>
                         </div>
                         <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event)">
+                        <button onclick="downloadTemplate()" class="w-full border border-blue-200 bg-blue-50 text-blue-700 py-2 rounded-lg text-xs font-medium hover:bg-blue-100 transition">⬇ 下载标准导入模板 (Excel)</button>
+                        <p class="text-[10px] text-slate-400 text-center">请按模板列名填写：姓名（必填）、部门、邮箱、UID/工号（可留空自动生成）</p>
                     </div>
 
                     <div class="relative flex py-1 items-center">
@@ -400,20 +402,21 @@
 
         try {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                throw new Error("浏览器环境不支持或无权限");
+                throw new Error("当前浏览器环境不支持摄像头（页面必须通过 HTTPS 打开）");
             }
-            await navigator.mediaDevices.getUserMedia({ video: true });
-            const devices = await Html5Qrcode.getCameras();
-            if (!devices || devices.length === 0) throw new Error("未识别到摄像头");
+
+            // 权限预检：请求成功后立即释放视频流，避免占用摄像头导致后续 html5-qrcode 启动失败（iOS/Android 常见问题）
+            const testStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            testStream.getTracks().forEach(t => t.stop());
 
             if (placeholder) placeholder.style.display = "none";
 
             html5QrcodeScanner = new Html5Qrcode("reader");
-            const cameraId = devices[devices.length - 1].id;
 
+            // 手机端优先调用后置摄像头（environment），桌面端自动回退默认摄像头
             await html5QrcodeScanner.start(
-                cameraId,
-                { fps: 10, qrbox: { width: 180, height: 180 } },
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 180, height: 180 }, aspectRatio: 1.0 },
                 (text) => processCheckin(text),
                 () => {}
             );
@@ -423,7 +426,13 @@
             btn.className = "flex-1 bg-rose-600 text-white py-2 rounded-lg font-medium hover:bg-rose-700 transition text-sm";
 
         } catch (err) {
-            alert(`摄像头无法启动：${err.message || err}\n您可以继续使用手动输入或外接扫码枪模式！`);
+            let msg = err && err.message ? err.message : String(err);
+            if (err && (err.name === 'NotAllowedError' || /permission|denied|拒绝/i.test(msg))) {
+                msg = "摄像头权限被拒绝。请在手机浏览器设置中允许本网站访问摄像头后重试（iOS: 设置 > Safari/浏览器 > 相机权限）";
+            } else if (err && (err.name === 'NotFoundError' || /not ?found|未识别/i.test(msg))) {
+                msg = "未检测到可用的摄像头设备";
+            }
+            alert(`摄像头无法启动：${msg}\n您可以继续使用手动输入或外接扫码枪模式！`);
             isScannerRunning = false;
             btn.innerText = "开启摄像头";
             if (placeholder) placeholder.style.display = "block";
@@ -431,24 +440,74 @@
     }
 
     // ---------------- 6. 数据导入 (上传至 Supabase) ----------------
+
+    // 6.0 生成不重复的 VIP UID（基于云端已有最大编号递增）
+    function nextVipUid(offset) {
+        let maxNum = 1000;
+        users.forEach(u => {
+            const m = /^VIP-(\d+)$/.exec(String(u.uid || ''));
+            if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
+        });
+        return `VIP-${maxNum + 1 + (offset || 0)}`;
+    }
+
+    // 6.1 下载标准导入模板（Excel，带示例行）
+    function downloadTemplate() {
+        const rows = [
+            ["姓名", "部门", "邮箱", "UID/工号"],
+            ["张三", "研发部", "zhangsan@company.com", ""],
+            ["李四", "市场部", "lisi@company.com", ""],
+            ["王五", "财务部", "wangwu@company.com", ""]
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 28 }, { wch: 20 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "签到名单");
+        XLSX.writeFile(wb, "签到名单导入模板.xlsx");
+    }
+
     async function saveUsersToCloud(newUsersList) {
-        const rows = newUsersList.map(u => ({
-            uid: u.uid,
-            name: u.name,
-            dept: u.dept,
-            email: u.email,
-            checked: false,
-            check_time: null
-        }));
+        if (!newUsersList || newUsersList.length === 0) {
+            return alert("没有可导入的有效数据行！\n请检查表格：姓名列不能为空，且列名需为「姓名 / 部门 / 邮箱 / UID(工号)」。\n建议点击「下载标准导入模板」按模板填写。");
+        }
+
+        // 过滤与云端已有 UID 重复的记录，避免主键冲突导致整批导入失败
+        const existingUids = new Set(users.map(u => String(u.uid || '').trim()));
+        const rows = [];
+        const skipped = [];
+
+        newUsersList.forEach(u => {
+            const uid = String(u.uid || '').trim();
+            if (existingUids.has(uid)) {
+                skipped.push(`${u.name}（${uid} 已存在）`);
+                return;
+            }
+            existingUids.add(uid);
+            rows.push({
+                uid: uid,
+                name: String(u.name || '').trim() || '未知姓名',
+                dept: String(u.dept || '').trim(),
+                email: String(u.email || '').trim(),
+                checked: false,
+                check_time: null
+            });
+        });
+
+        if (rows.length === 0) {
+            return alert(`全部 ${skipped.length} 条记录的 UID 均已存在于云端，未导入任何数据。\n${skipped.slice(0, 10).join('\n')}${skipped.length > 10 ? '\n...' : ''}`);
+        }
 
         const { error } = await supabaseClient
             .from('checkin_users')
             .insert(rows);
 
         if (error) {
-            alert('导入云端失败: ' + error.message);
+            console.error('导入云端失败:', error);
+            alert(`导入云端失败：${error.message}\n\n排查建议：\n1. 请使用页面「下载标准导入模板」按钮生成的表格填写；\n2. 确认表头列名为：姓名、部门、邮箱、UID/工号；\n3. 若仍报字段缺失，可能是 Supabase 表中存在额外的必填列，请检查 checkin_users 表结构。`);
         } else {
-            alert(`成功导入 ${rows.length} 条记录到云端！`);
+            let tip = `✅ 成功导入 ${rows.length} 条记录到云端！`;
+            if (skipped.length > 0) tip += `\n跳过 ${skipped.length} 条重复记录。`;
+            alert(tip);
         }
     }
 
@@ -464,20 +523,23 @@
                 const worksheet = workbook.Sheets[workbook.SheetNames[0]];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-                if (jsonData.length < 2) return alert("表格为空或缺少数据！");
+                if (jsonData.length < 2) return alert("表格为空或缺少数据！请下载标准模板填写后再上传。");
 
                 const headers = jsonData[0].map(h => String(h || '').trim().toLowerCase());
                 let nameIdx = headers.findIndex(h => h.includes('姓名') || h.includes('name'));
                 let deptIdx = headers.findIndex(h => h.includes('部门') || h.includes('dept'));
                 let emailIdx = headers.findIndex(h => h.includes('邮箱') || h.includes('mail'));
-                let uidIdx = headers.findIndex(h => h.includes('uid') || h.includes('编号'));
+                let uidIdx = headers.findIndex(h => h.includes('uid') || h.includes('工号') || h.includes('编号'));
 
-                if (nameIdx === -1) nameIdx = 0;
+                if (nameIdx === -1) {
+                    return alert(`未识别到「姓名」列！\n检测到的表头为：${headers.filter(Boolean).join(' / ') || '（空）'}\n\n请点击「下载标准导入模板」获取正确格式（列：姓名、部门、邮箱、UID/工号）。`);
+                }
 
                 let pendingUsers = [];
+                let emptyRows = 0;
                 for (let i = 1; i < jsonData.length; i++) {
                     const row = jsonData[i];
-                    if (!row || row.length === 0) continue;
+                    if (!row || row.length === 0 || row.every(c => c === null || c === undefined || String(c).trim() === '')) continue;
 
                     const name = row[nameIdx] ? String(row[nameIdx]).trim() : '';
                     const dept = (deptIdx !== -1 && row[deptIdx]) ? String(row[deptIdx]).trim() : '';
@@ -485,17 +547,24 @@
                     let uid = (uidIdx !== -1 && row[uidIdx]) ? String(row[uidIdx]).trim() : '';
 
                     if (name) {
-                        if (!uid) uid = `VIP-${1001 + users.length + pendingUsers.length}`;
+                        if (!uid) { uid = nextVipUid(pendingUsers.length); emptyRows++; }
                         pendingUsers.push({ uid, name, dept, email });
                     }
                 }
 
-                if (pendingUsers.length > 0) {
-                    await saveUsersToCloud(pendingUsers);
+                if (pendingUsers.length === 0) {
+                    return alert("未解析到任何有效数据行！请确认「姓名」列已填写。");
                 }
+
+                let tip = `解析成功：共 ${pendingUsers.length} 条有效记录`;
+                if (emptyRows > 0) tip += `（其中 ${emptyRows} 条未填 UID，已自动生成 VIP 编号）`;
+                console.log(tip);
+
+                await saveUsersToCloud(pendingUsers);
                 event.target.value = '';
             } catch (err) {
-                alert("文件解析失败！");
+                console.error(err);
+                alert("文件解析失败！请确认上传的是有效的 Excel (.xlsx/.xls) 或 CSV 文件。");
             }
         };
         reader.readAsArrayBuffer(file);
@@ -517,7 +586,7 @@
                 const email = parts[2] ? parts[2].trim() : '';
 
                 if (name) {
-                    const newUid = `VIP-${1001 + users.length + pendingUsers.length}`;
+                    const newUid = nextVipUid(pendingUsers.length);
                     pendingUsers.push({ uid: newUid, name, dept, email });
                 }
             }
