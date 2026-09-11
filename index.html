@@ -28,10 +28,10 @@
         <header class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                    <span>FACT Conference APAC现场签到核销系统</span>
+                    <span>高可用现场签到核销系统</span>
                     <span id="status-badge" class="text-xs font-normal px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">系统就绪</span>
                 </h1>
-                <p class="text-sm text-slate-500 mt-1">支持：摄像头扫码 / 姓名、部门、邮箱快速搜索核销</p>
+                <p class="text-sm text-slate-500 mt-1">支持：摄像头扫码 / 硬件扫码枪 / 姓名、部门、邮箱快速搜索核销</p>
             </div>
             <div class="flex gap-2 w-full md:w-auto">
                 <button onclick="switchTab('scanner')" id="tab-scanner" class="flex-1 md:flex-none px-4 py-2 bg-blue-600 text-white font-medium rounded-lg shadow-sm hover:bg-blue-700 transition">现场签到窗口</button>
@@ -61,7 +61,7 @@
                         </div>
                     </div>
 
-                    <!-- 方案 B：降级应急手动输入 -->
+                    <!-- 方案 B：降级应急手动输入/扫码枪 -->
                     <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-3">
                         <div class="flex justify-between items-center border-b pb-2">
                             <h2 class="text-base font-semibold text-slate-800">方案 B：手动验证</h2>
@@ -180,9 +180,12 @@
 
                 <!-- 专属二维码卡片 -->
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 md:col-span-2 space-y-4">
-                    <div class="flex justify-between items-center border-b pb-2">
+                    <div class="flex flex-wrap justify-between items-center gap-2 border-b pb-2">
                         <h2 class="text-lg font-semibold text-slate-800">预发个人专属二维码卡片</h2>
-                        <span class="text-xs text-slate-400">可截图发送给参会人员保存</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-400 hidden sm:inline">可截图或下载发送给参会人员</span>
+                            <button onclick="downloadAllQRCodes()" id="btn-download-all-qr" class="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 transition shadow-sm">⬇ 批量下载所有二维码 (ZIP)</button>
+                        </div>
                     </div>
                     <div id="tickets-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[520px] overflow-y-auto p-1">
                         <!-- 动态生成二维码卡片 -->
@@ -719,7 +722,10 @@
                     <p class="text-[11px] text-slate-400 font-mono truncate">${u.email || '-'}</p>
                 </div>
                 <div id="${qrId}" class="p-1.5 bg-white border border-slate-200 rounded shadow-inner"></div>
-                <p class="text-[10px] text-slate-400 font-mono">编号: ${u.id}</p>
+                <div class="flex items-center gap-2">
+                    <p class="text-[10px] text-slate-400 font-mono">编号: ${u.id}</p>
+                    <button onclick="downloadSingleQr(${u.id})" class="text-[10px] text-blue-600 hover:underline font-medium">⬇ 下载本卡</button>
+                </div>
             `;
             container.appendChild(card);
 
@@ -736,6 +742,183 @@
                 }
             }, 30 * index);
         });
+    }
+
+    // ---------------- 7.5 二维码批量/单个下载 ----------------
+
+    // 确保打包库已加载：双 CDN 容错（jsdelivr 主源 + unpkg 备源），按需加载不拖慢页面
+    async function ensureJSZip() {
+        if (typeof JSZip !== 'undefined') return;
+        const sources = [
+            'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
+            'https://unpkg.com/jszip@3.10.1/dist/jszip.min.js'
+        ];
+        for (const src of sources) {
+            try {
+                await loadScript(src);
+                if (typeof JSZip !== 'undefined') return;
+            } catch (e) { /* 尝试下一个源 */ }
+        }
+        throw new Error('打包组件 (JSZip) 加载失败，请检查网络后重试');
+    }
+
+    // 确保二维码生成库已加载（页面头部为 cdnjs 源，此处补充备源）
+    async function ensureQRCodeLib() {
+        if (typeof QRCode !== 'undefined') return;
+        const sources = [
+            'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js',
+            'https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js'
+        ];
+        for (const src of sources) {
+            try {
+                await loadScript(src);
+                if (typeof QRCode !== 'undefined') return;
+            } catch (e) { /* 尝试下一个源 */ }
+        }
+        throw new Error('二维码组件加载失败，请检查网络后重试');
+    }
+
+    // 在离屏容器中生成二维码，返回等尺寸的 canvas（供合成卡片使用）
+    function makeQrCanvas(text, size) {
+        return new Promise((resolve, reject) => {
+            const holder = document.createElement('div');
+            holder.style.cssText = 'position:fixed;left:-9999px;top:0;';
+            document.body.appendChild(holder);
+            try {
+                new QRCode(holder, { text: String(text), width: size, height: size, correctLevel: QRCode.CorrectLevel.M });
+                setTimeout(() => {
+                    try {
+                        const src = holder.querySelector('canvas') || holder.querySelector('img');
+                        if (!src) throw new Error('二维码渲染失败');
+                        const out = document.createElement('canvas');
+                        out.width = size; out.height = size;
+                        const ctx = out.getContext('2d');
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, size, size);
+                        ctx.drawImage(src, 0, 0, size, size);
+                        holder.remove();
+                        resolve(out);
+                    } catch (e) {
+                        holder.remove();
+                        reject(e);
+                    }
+                }, 50);
+            } catch (e) {
+                holder.remove();
+                reject(e);
+            }
+        });
+    }
+
+    // 生成单人二维码卡片 PNG（姓名 / 部门 / 邮箱 + 大尺寸二维码 + 编号）
+    async function makeCardPng(u) {
+        await ensureQRCodeLib();
+        const W = 420, H = 560, QR_SIZE = 320;
+        const c = document.createElement('canvas');
+        c.width = W; c.height = H;
+        const ctx = c.getContext('2d');
+
+        // 白色背景
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, W, H);
+        ctx.textAlign = 'center';
+
+        // 姓名
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 32px "Microsoft YaHei", "PingFang SC", sans-serif';
+        ctx.fillText(String(u.name || ''), W / 2, 58);
+
+        // 部门
+        ctx.fillStyle = '#64748b';
+        ctx.font = '20px "Microsoft YaHei", "PingFang SC", sans-serif';
+        ctx.fillText(String(u.dept || ''), W / 2, 90);
+
+        // 二维码
+        const qr = await makeQrCanvas(u.id, QR_SIZE);
+        ctx.drawImage(qr, (W - QR_SIZE) / 2, 110, QR_SIZE, QR_SIZE);
+
+        // 编号
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 26px monospace';
+        ctx.fillText('编号: ' + u.id, W / 2, 480);
+
+        // 邮箱
+        if (u.email) {
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '16px sans-serif';
+            ctx.fillText(String(u.email), W / 2, 515);
+        }
+
+        return new Promise(resolve => c.toBlob(resolve, 'image/png'));
+    }
+
+    // 触发浏览器下载一个 Blob
+    function triggerBlobDownload(blob, filename) {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+    }
+
+    // 文件名安全化（去掉 Windows/手机不允许的字符）
+    function safeFileName(s) {
+        return String(s || '').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40);
+    }
+
+    // 单个下载：某位参会人员的二维码卡片
+    async function downloadSingleQr(id) {
+        const u = users.find(x => x.id === id);
+        if (!u) return alert('未找到该人员，请刷新页面后重试');
+        try {
+            const blob = await makeCardPng(u);
+            triggerBlobDownload(blob, `签到二维码_${String(u.id).padStart(3, '0')}_${safeFileName(u.name)}.png`);
+        } catch (err) {
+            alert('下载失败：' + (err.message || err));
+        }
+    }
+
+    // 批量下载：全部人员的二维码卡片打包成 ZIP
+    async function downloadAllQRCodes() {
+        if (users.length === 0) return alert('暂无参会人员数据，请先导入名单！');
+
+        const btn = document.getElementById('btn-download-all-qr');
+        const originalText = btn ? btn.innerText : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = '正在生成二维码...';
+            btn.className = 'px-3 py-1.5 bg-slate-400 text-white rounded-lg text-xs font-medium cursor-not-allowed';
+        }
+
+        try {
+            await ensureJSZip();
+            const zip = new JSZip();
+            let done = 0;
+
+            for (const u of users) {
+                const blob = await makeCardPng(u);
+                if (blob) {
+                    zip.file(`${String(u.id).padStart(3, '0')}-${safeFileName(u.name)}.png`, blob);
+                }
+                done++;
+                if (btn) btn.innerText = `正在生成 (${done}/${users.length})...`;
+            }
+
+            if (btn) btn.innerText = '正在打包...';
+            const zipBlob = await zip.generateAsync({ type: 'blob' });
+            triggerBlobDownload(zipBlob, `签到二维码_${new Date().toISOString().slice(0, 10)}.zip`);
+        } catch (err) {
+            console.error(err);
+            alert('批量下载失败：' + (err.message || err));
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = originalText || '⬇ 批量下载所有二维码 (ZIP)';
+                btn.className = 'px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 transition shadow-sm';
+            }
+        }
     }
 
     // ---------------- 8. 清空与重置 ----------------
