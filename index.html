@@ -1026,17 +1026,11 @@
     // ---------------- 8. 清空与重置 ----------------
     async function resetData() {
         if (confirm("是否重置所有人的签到状态？")) {
-            // 先取出所有 id，再用 in() 等值过滤批量更新（PostgREST 不接受 neq 全表过滤）
-            const { data: rows, error: selErr } = await supabaseClient
-                .from('checkin_users')
-                .select('id');
-            if (selErr) return alert('重置失败：' + selErr.message);
-            if (!rows || rows.length === 0) return;
-
+            // 用 id > 0 过滤全表（PostgREST 接受的合法 WHERE），简洁可靠
             const { error } = await supabaseClient
                 .from('checkin_users')
                 .update({ checked: false, check_time: null })
-                .in('id', rows.map(r => r.id));
+                .gt('id', 0);
 
             if (error) alert('重置失败: ' + error.message);
         }
@@ -1049,21 +1043,12 @@
         const { error } = await supabaseClient.rpc('reset_checkin_sequence');
 
         if (error) {
-            // 兜底：若函数尚未创建（42883/PGRST202），回退到 select+in 批量删除并提示
+            // 兜底：若函数尚未创建（42883/PGRST202），回退到 id > 0 的 DELETE 并提示
             if (error.code === '42883' || error.code === 'PGRST202' || /function.*not.*exist/i.test(error.message || '')) {
-                const { data: rows, error: selErr } = await supabaseClient
-                    .from('checkin_users')
-                    .select('id');
-                if (selErr) return alert('清空失败：' + selErr.message);
-
-                if (!rows || rows.length === 0) {
-                    return alert('名单已是空的。\n\n📌 要让编号从 1 开始，请在 Supabase → SQL Editor 执行 supabase_fix.sql 中的 reset_checkin_sequence 函数（之后清空操作即可自动重置编号）。');
-                }
-
                 const { error: delErr } = await supabaseClient
                     .from('checkin_users')
                     .delete()
-                    .in('id', rows.map(r => r.id));
+                    .gt('id', 0);
 
                 if (delErr) {
                     alert('清空失败：' + delErr.message + '\n\n请检查 checkin_users 表的 RLS 策略是否允许 DELETE 匿名访问。');
