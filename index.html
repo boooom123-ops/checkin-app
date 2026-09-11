@@ -113,9 +113,35 @@
                             </div>
                         </div>
 
-                        <!-- 模糊搜索框 -->
-                        <div class="p-3 bg-slate-50 border-b border-slate-100">
-                            <input type="text" id="search-keyword" oninput="debouncedRenderTable()" placeholder="搜索：输入姓名、部门、BUS No.、邮箱或编号..." class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <!-- 分字段搜索框 -->
+                        <div class="p-3 bg-slate-50 border-b border-slate-100 space-y-2">
+                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                                <input type="text" id="search-id" oninput="debouncedRenderTable()" placeholder="编号" autocomplete="off" class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white font-mono">
+                                <input type="text" id="search-name" oninput="debouncedRenderTable()" placeholder="姓名" autocomplete="off" class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                                <input type="text" id="search-dept" oninput="debouncedRenderTable()" placeholder="部门" autocomplete="off" class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                                <input type="text" id="search-bus" oninput="debouncedRenderTable()" placeholder="BUS No." autocomplete="off" class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white font-mono">
+                                <input type="text" id="search-email" oninput="debouncedRenderTable()" placeholder="邮箱" autocomplete="off" class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2 text-xs">
+                                <label class="flex items-center gap-1.5 text-slate-500">
+                                    排序：
+                                    <select id="sort-order" onchange="renderTable()" class="p-1 border border-slate-300 rounded-md bg-white outline-none focus:ring-2 focus:ring-blue-500">
+                                        <option value="time" selected>最新签到在前</option>
+                                        <option value="time-asc">最早签到在前</option>
+                                        <option value="id">按编号排序</option>
+                                    </select>
+                                </label>
+                                <label class="flex items-center gap-1.5 text-slate-500">
+                                    状态：
+                                    <select id="filter-status" onchange="renderTable()" class="p-1 border border-slate-300 rounded-md bg-white outline-none focus:ring-2 focus:ring-blue-500">
+                                        <option value="all" selected>全部</option>
+                                        <option value="checked">已签到</option>
+                                        <option value="unchecked">未签到</option>
+                                    </select>
+                                </label>
+                                <button onclick="clearFilters()" class="text-slate-400 hover:text-blue-600 hover:underline">清空筛选</button>
+                                <span id="filter-count" class="ml-auto text-slate-400"></span>
+                            </div>
                         </div>
 
                         <div class="max-h-96 overflow-y-auto">
@@ -678,19 +704,61 @@
         debounceTimer = setTimeout(renderTable, 200);
     }
 
+    // 清空所有搜索/筛选条件
+    function clearFilters() {
+        ['search-id', 'search-name', 'search-dept', 'search-bus', 'search-email'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        const so = document.getElementById('sort-order');
+        if (so) so.value = 'time';
+        const fs = document.getElementById('filter-status');
+        if (fs) fs.value = 'all';
+        renderTable();
+    }
+
     function renderTable() {
         const tbody = document.getElementById('table-body');
         if (!tbody) return;
-        const keyword = (document.getElementById('search-keyword')?.value || '').trim().toLowerCase();
         tbody.innerHTML = '';
 
-        const filteredUsers = users.filter(u =>
-            u.name.toLowerCase().includes(keyword) ||
-            (u.dept && u.dept.toLowerCase().includes(keyword)) ||
-            (u.email && u.email.toLowerCase().includes(keyword)) ||
-            (u.busNo !== null && u.busNo !== undefined && String(u.busNo).includes(keyword)) ||
-            String(u.id).includes(keyword)
-        );
+        // 分字段读取搜索关键字（空值不过滤）
+        const kw = {
+            id: (document.getElementById('search-id')?.value || '').trim().toLowerCase(),
+            name: (document.getElementById('search-name')?.value || '').trim().toLowerCase(),
+            dept: (document.getElementById('search-dept')?.value || '').trim().toLowerCase(),
+            bus: (document.getElementById('search-bus')?.value || '').trim().toLowerCase(),
+            email: (document.getElementById('search-email')?.value || '').trim().toLowerCase()
+        };
+        const statusFilter = document.getElementById('filter-status')?.value || 'all';
+        const sortOrder = document.getElementById('sort-order')?.value || 'time';
+
+        let filteredUsers = users.filter(u => {
+            if (kw.id && !String(u.id).toLowerCase().includes(kw.id)) return false;
+            if (kw.name && !String(u.name || '').toLowerCase().includes(kw.name)) return false;
+            if (kw.dept && !String(u.dept || '').toLowerCase().includes(kw.dept)) return false;
+            if (kw.bus && !(u.busNo !== null && u.busNo !== undefined && String(u.busNo).toLowerCase().includes(kw.bus))) return false;
+            if (kw.email && !String(u.email || '').toLowerCase().includes(kw.email)) return false;
+            if (statusFilter === 'checked' && !u.checked) return false;
+            if (statusFilter === 'unchecked' && u.checked) return false;
+            return true;
+        });
+
+        // 排序：默认按签到时间倒序（最新扫码在最上面，方便核对）；未签到人员固定排在最后
+        const ts = u => {
+            const t = u.checkTime ? new Date(u.checkTime).getTime() : NaN;
+            return isNaN(t) ? 0 : t;
+        };
+        if (sortOrder === 'time') {
+            filteredUsers.sort((a, b) => (ts(b) || -Infinity) - (ts(a) || -Infinity) || a.id - b.id);
+        } else if (sortOrder === 'time-asc') {
+            filteredUsers.sort((a, b) => ((ts(a) || Infinity) - (ts(b) || Infinity)) || a.id - b.id);
+        } else {
+            filteredUsers.sort((a, b) => a.id - b.id);
+        }
+
+        const countEl = document.getElementById('filter-count');
+        if (countEl) countEl.innerText = `共 ${filteredUsers.length} / ${users.length} 人`;
 
         if (filteredUsers.length === 0) {
             tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400 text-xs">没有找到匹配的参会记录</td></tr>`;
