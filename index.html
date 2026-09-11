@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>高可用现场签到与核销系统</title>
+    <title>FACT Conference APAC</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 客户端摄像头扫码库 Html5-QRCode -->
@@ -28,7 +28,7 @@
         <header class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                    <span>高可用现场签到核销系统</span>
+                    <span>FACT Conference APAC现场签到核销系统</span>
                     <span id="status-badge" class="text-xs font-normal px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">系统就绪</span>
                 </h1>
                 <p class="text-sm text-slate-500 mt-1">支持：摄像头扫码 / 硬件扫码枪 / 姓名、部门、邮箱快速搜索核销</p>
@@ -315,7 +315,13 @@
     // ---------------- 4. 签到核销逻辑 ----------------
     // 识别优先级：编号（id，扫码内容） > 邮箱 > 姓名
     // 时间处理：云端列是 timestamp 类型，必须存完整时间戳；显示时转为 时:分:秒
-    function nowIso() { return new Date().toISOString(); }
+    // 时间处理：云端列是 timestamp（无时区）类型。toISOString() 输出 UTC 会比本地慢 8 小时，
+    // 因此这里生成"本地时间"的完整时间戳 YYYY-MM-DDTHH:mm:ss，写入和显示保持一致。
+    function nowIso() {
+        const d = new Date();
+        const p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
     function fmtTime(t) {
         if (!t) return '--';
         const d = new Date(t);
@@ -936,7 +942,7 @@
 
             if (btn) btn.innerText = '正在打包...';
             const zipBlob = await zip.generateAsync({ type: 'blob' });
-            triggerBlobDownload(zipBlob, `签到二维码_${new Date().toISOString().slice(0, 10)}.zip`);
+            triggerBlobDownload(zipBlob, `签到二维码_${nowIso().slice(0, 10)}.zip`);
         } catch (err) {
             console.error(err);
             alert('批量下载失败：' + (err.message || err));
@@ -982,7 +988,7 @@
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
-        link.setAttribute("download", `签到结果导出_${new Date().toISOString().slice(0,10)}.csv`);
+        link.setAttribute("download", `签到结果导出_${nowIso().slice(0,10)}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
