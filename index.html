@@ -7,7 +7,7 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 客户端摄像头扫码库 Html5-QRCode -->
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <!-- 二维码生成库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <!-- Excel / CSV 解析库 SheetJS -->
@@ -309,6 +309,16 @@
 
     // ---------------- 4. 签到核销逻辑 ----------------
     // 识别优先级：编号（id，扫码内容） > 邮箱 > 姓名
+    // 时间处理：云端列是 timestamp 类型，必须存完整时间戳；显示时转为 时:分:秒
+    function nowIso() { return new Date().toISOString(); }
+    function fmtTime(t) {
+        if (!t) return '--';
+        const d = new Date(t);
+        if (isNaN(d.getTime())) return String(t); // 兼容旧数据（纯时间字符串）
+        const p = n => String(n).padStart(2, '0');
+        return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
+
     async function processCheckin(keyword) {
         const resultBox = document.getElementById('scan-result');
         if (!resultBox) return;
@@ -330,17 +340,13 @@
         } else if (user.checked) {
             playBeep('warning');
             resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-amber-100 text-amber-800 border-amber-200";
-            resultBox.innerText = `⚠️ 重复签到：${user.name} (${user.dept || '未知部门'}) 已于 ${user.checkTime} 入场`;
+            resultBox.innerText = `⚠️ 重复签到：${user.name} (${user.dept || '未知部门'}) 已于 ${fmtTime(user.checkTime)} 入场`;
         } else {
             playBeep('success');
-            const now = new Date();
-            const timeStr = now.getHours().toString().padStart(2, '0') + ':' +
-                            now.getMinutes().toString().padStart(2, '0') + ':' +
-                            now.getSeconds().toString().padStart(2, '0');
 
             const { error } = await supabaseClient
                 .from('checkin_users')
-                .update({ checked: true, check_time: timeStr })
+                .update({ checked: true, check_time: nowIso() })
                 .eq('id', user.id);
 
             if (error) {
@@ -375,10 +381,7 @@
         if (user.checked) {
             if (!confirm(`是否取消 ${user.name} 的签到状态？`)) return;
         } else {
-            const now = new Date();
-            newTime = now.getHours().toString().padStart(2, '0') + ':' +
-                     now.getMinutes().toString().padStart(2, '0') + ':' +
-                     now.getSeconds().toString().padStart(2, '0');
+            newTime = nowIso();
         }
 
         const { error } = await supabaseClient
@@ -390,6 +393,34 @@
     }
 
     // ---------------- 5. 摄像头扫码功能 ----------------
+
+    // 动态加载脚本（主 CDN 失败时自动切换备用源）
+    function loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = () => reject(new Error('资源加载失败'));
+            document.head.appendChild(s);
+        });
+    }
+
+    // 确保扫码库已加载：双 CDN 容错（jsdelivr 主源 + unpkg 备源）
+    async function ensureHtml5Qrcode() {
+        if (typeof Html5Qrcode !== 'undefined') return;
+        const sources = [
+            'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js',
+            'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
+        ];
+        for (const src of sources) {
+            try {
+                await loadScript(src);
+                if (typeof Html5Qrcode !== 'undefined') return;
+            } catch (e) { /* 尝试下一个源 */ }
+        }
+        throw new Error('扫码组件加载失败，请检查手机网络后刷新页面重试');
+    }
+
     async function toggleScanner() {
         const btn = document.getElementById('btn-toggle-cam');
         const placeholder = document.getElementById('reader-placeholder');
@@ -407,25 +438,35 @@
         }
 
         try {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                throw new Error("当前浏览器环境不支持摄像头（页面必须通过 HTTPS 打开）");
+            // 1) 微信/QQ 内置浏览器不支持摄像头 API，必须用系统浏览器打开
+            const ua = navigator.userAgent.toLowerCase();
+            if (/micromessenger|mobile.*qq\//.test(ua)) {
+                alert('当前在微信/QQ内置浏览器中，无法调用摄像头。\n\n请点击右上角「···」→ 选择「在浏览器中打开」（iPhone 选「在Safari中打开」），然后再点开启摄像头。');
+                return;
             }
 
-            // 权限预检：请求成功后立即释放视频流，避免占用摄像头导致后续 html5-qrcode 启动失败（iOS/Android 常见问题）
-            const testStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-            testStream.getTracks().forEach(t => t.stop());
+            // 2) 环境检查：必须 HTTPS + 支持 getUserMedia
+            if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error("当前浏览器环境不支持摄像头（页面必须通过 HTTPS 访问，请使用系统自带浏览器）");
+            }
+
+            // 3) 确保扫码库已加载（不在页面加载时占用摄像头权限，避免 iOS 重复申请卡死）
+            await ensureHtml5Qrcode();
 
             if (placeholder) placeholder.style.display = "none";
 
             html5QrcodeScanner = new Html5Qrcode("reader");
+            const cfg = { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 };
+            const onScan = (text) => processCheckin(text);
 
-            // 手机端优先调用后置摄像头（environment），桌面端自动回退默认摄像头
-            await html5QrcodeScanner.start(
-                { facingMode: "environment" },
-                { fps: 10, qrbox: { width: 180, height: 180 }, aspectRatio: 1.0 },
-                (text) => processCheckin(text),
-                () => {}
-            );
+            // 4) 优先后置摄像头；个别机型不支持 facingMode 时，回退为枚举设备ID
+            try {
+                await html5QrcodeScanner.start({ facingMode: "environment" }, cfg, onScan, () => {});
+            } catch (e1) {
+                const devices = await Html5Qrcode.getCameras();
+                if (!devices || devices.length === 0) throw e1;
+                await html5QrcodeScanner.start(devices[devices.length - 1].id, cfg, onScan, () => {});
+            }
 
             isScannerRunning = true;
             btn.innerText = "关闭摄像头";
@@ -434,11 +475,11 @@
         } catch (err) {
             let msg = err && err.message ? err.message : String(err);
             if (err && (err.name === 'NotAllowedError' || /permission|denied|拒绝/i.test(msg))) {
-                msg = "摄像头权限被拒绝。请在手机浏览器设置中允许本网站访问摄像头后重试（iOS: 设置 > Safari/浏览器 > 相机权限）";
-            } else if (err && (err.name === 'NotFoundError' || /not ?found|未识别/i.test(msg))) {
+                msg = "摄像头权限被拒绝。请在手机浏览器设置中允许本网站访问摄像头后重试\n（iPhone: 设置 → Safari → 相机 → 允许；安卓: 长按浏览器 → 权限管理 → 相机）";
+            } else if (err && (err.name === 'NotFoundError' || /not ?found|未识别|no camera/i.test(msg))) {
                 msg = "未检测到可用的摄像头设备";
             }
-            alert(`摄像头无法启动：${msg}\n您可以继续使用手动输入或外接扫码枪模式！`);
+            alert(`摄像头无法启动：${msg}\n\n您可以继续使用手动输入或外接扫码枪模式！`);
             isScannerRunning = false;
             btn.innerText = "开启摄像头";
             if (placeholder) placeholder.style.display = "block";
@@ -633,7 +674,7 @@
                         : `<span class="px-2 py-0.5 text-xs rounded bg-slate-100 text-slate-500 font-medium">未签到</span>`
                     }
                 </td>
-                <td class="p-3 text-xs font-mono text-slate-500">${item.checkTime || '--'}</td>
+                <td class="p-3 text-xs font-mono text-slate-500">${fmtTime(item.checkTime)}</td>
                 <td class="p-3 text-right">
                     <button onclick="toggleCheckinById(${item.id})" class="px-2.5 py-1 text-xs rounded font-medium border transition ${
                         item.checked
@@ -725,7 +766,7 @@
 
         let csv = "\uFEFF编号,姓名,部门,邮箱,签到状态,签到时间\n";
         users.forEach(u => {
-            csv += `"${u.id}","${u.name}","${u.dept || '-'}","${u.email || '-'}","${u.checked ? '已签到' : '未签到'}","${u.checkTime || '--'}"\n`;
+            csv += `"${u.id}","${u.name}","${u.dept || '-'}","${u.email || '-'}","${u.checked ? '已签到' : '未签到'}","${fmtTime(u.checkTime)}"\n`;
         });
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
