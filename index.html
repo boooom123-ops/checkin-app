@@ -19,9 +19,154 @@
             object-fit: cover !important;
             border-radius: 0.5rem;
         }
+
+        /* ===== 扫码结果全屏弹窗 ===== */
+        #toast-backdrop {
+            position: fixed; inset: 0;
+            background: rgba(15, 23, 42, 0.55);
+            -webkit-backdrop-filter: blur(4px);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+            padding: 1rem;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.25s ease;
+        }
+        #toast-backdrop.show {
+            opacity: 1; pointer-events: auto;
+        }
+        #toast-card {
+            background: #ffffff;
+            border-radius: 1.25rem;
+            padding: 2.25rem 1.75rem 1.5rem;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45);
+            width: 100%; max-width: 460px;
+            transform: scale(0.85) translateY(-24px);
+            transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+            border-top: 6px solid #94a3b8;
+        }
+        #toast-backdrop.show #toast-card { transform: scale(1) translateY(0); }
+        #toast-card .toast-icon {
+            font-size: 4.5rem; line-height: 1;
+            margin-bottom: 0.75rem;
+            display: inline-block;
+        }
+        #toast-card .toast-title {
+            font-size: 1.5rem; font-weight: 700;
+            margin-bottom: 0.5rem; line-height: 1.3;
+        }
+        #toast-card .toast-sub {
+            color: #475569; font-size: 0.95rem;
+            line-height: 1.55; margin-bottom: 0.25rem;
+        }
+        #toast-card .toast-hint {
+            color: #94a3b8; font-size: 0.75rem;
+            margin-top: 0.5rem; letter-spacing: 0.05em;
+        }
+        #toast-card .toast-close {
+            margin-top: 1.25rem;
+            padding: 0.55rem 1.5rem;
+            background: #f1f5f9; color: #475569;
+            border-radius: 0.625rem;
+            font-size: 0.85rem; font-weight: 500;
+            cursor: pointer; border: none;
+            transition: background 0.15s;
+        }
+        #toast-card .toast-close:hover { background: #e2e8f0; }
+        /* 颜色变体 */
+        #toast-card.success { border-top-color: #10b981; }
+        #toast-card.success .toast-title { color: #047857; }
+        #toast-card.success .toast-icon { animation: toastPulse 0.55s ease; }
+        #toast-card.error   { border-top-color: #ef4444; }
+        #toast-card.error   .toast-title { color: #b91c1c; }
+        #toast-card.warning { border-top-color: #f59e0b; }
+        #toast-card.warning .toast-title { color: #b45309; }
+        @keyframes toastPulse {
+            0%   { transform: scale(0.85); }
+            55%  { transform: scale(1.15); }
+            100% { transform: scale(1); }
+        }
+
+        /* ===== 实时扫码小记 ===== */
+        .scan-log {
+            margin-top: 0.75rem;
+            width: 100%;
+            max-height: 96px; overflow-y: auto;
+            font-size: 0.72rem; line-height: 1.4;
+            color: #64748b;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            text-align: left;
+        }
+        .scan-log .log-row { display: flex; gap: 0.4rem; padding: 1px 0; }
+        .scan-log .log-row .t { color: #94a3b8; font-family: monospace; }
+        .scan-log .log-row.s { color: #047857; }
+        .scan-log .log-row.e { color: #b91c1c; }
+        .scan-log .log-row.w { color: #b45309; }
+        .scan-log:empty::before {
+            content: "暂无扫码记录";
+            color: #cbd5e1;
+            font-style: italic;
+        }
+
+        /* ===== 巴士×日期筛选芯片 ===== */
+        .chip-group {
+            display: inline-flex;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            border: 1px solid #cbd5e1;
+            background: #fff;
+        }
+        .filter-chip {
+            padding: 5px 12px;
+            background: #fff;
+            color: #334155;
+            font-size: 12px;
+            line-height: 1.3;
+            border: 0;
+            border-right: 1px solid #e2e8f0;
+            cursor: pointer;
+            transition: background-color .15s, color .15s;
+            white-space: nowrap;
+        }
+        .filter-chip:last-child { border-right: 0; }
+        .filter-chip:hover { background: #f1f5f9; }
+        .filter-chip.active {
+            background: #2563eb;
+            color: #ffffff;
+            font-weight: 600;
+        }
+        .filter-chip.active:hover { background: #1d4ed8; }
+
+        .filter-mode-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #dbeafe;
+            color: #1d4ed8;
+            font-weight: 500;
+        }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 font-sans min-h-screen p-4 md:p-8">
+
+    <!-- ===== 全局扫码结果弹窗（fixed 居中遮罩，独立于任何视图） ===== -->
+    <!-- 点遮罩空白处也能关闭（只在点击 target===backdrop 时触发，避免冒泡干扰确定按钮） -->
+    <div id="toast-backdrop" role="dialog" aria-live="assertive" aria-modal="true" onclick="if(event.target===this)hideToast()">
+        <div id="toast-card" onclick="event.stopPropagation()">
+            <div id="toast-icon" class="toast-icon">✅</div>
+            <div id="toast-title" class="toast-title">签到成功</div>
+            <div id="toast-sub" class="toast-sub"></div>
+            <div id="toast-hint" class="toast-hint">点击「确定」继续 (Esc 关闭)</div>
+            <button class="toast-close" onclick="hideToast()">确定</button>
+        </div>
+    </div>
 
     <div class="max-w-7xl mx-auto space-y-6">
         <!-- 顶栏 -->
@@ -31,7 +176,7 @@
                     <span>FACT Conference APAC现场签到核销系统</span>
                     <span id="status-badge" class="text-xs font-normal px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">系统就绪</span>
                 </h1>
-                <p class="text-sm text-slate-500 mt-1">支持：摄像头扫码 / 姓名、部门、邮箱快速搜索核销</p>
+                <p class="text-sm text-slate-500 mt-1">支持：摄像头扫码 / 快速搜索核销</p>
             </div>
             <div class="flex gap-2 w-full md:w-auto">
                 <button onclick="switchTab('scanner')" id="tab-scanner" class="flex-1 md:flex-none px-4 py-2 bg-blue-600 text-white font-medium rounded-lg shadow-sm hover:bg-blue-700 transition">现场签到窗口</button>
@@ -59,6 +204,9 @@
                         <div class="flex gap-2 w-full mt-4">
                             <button onclick="toggleScanner()" id="btn-toggle-cam" class="flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition text-sm">开启摄像头</button>
                         </div>
+
+                        <!-- 最近扫码记录 -->
+                        <div id="scan-log" class="scan-log"></div>
                     </div>
 
                     <!-- 方案 B：降级应急手动输入/扫码枪 -->
@@ -67,10 +215,10 @@
                             <h2 class="text-base font-semibold text-slate-800">方案 B：手动验证</h2>
                             <span class="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-medium">应急降级</span>
                         </div>
-                        <p class="text-xs text-slate-400"></p>
+                        <p class="text-xs text-slate-400">只支持输入<strong class="text-slate-600">参会者编号</strong>(如 <code class="px-1 bg-slate-100 rounded font-mono">12</code>)。</p>
 
                         <form onsubmit="handleManualVerify(event)" class="space-y-2">
-                            <input type="text" id="manual-input" placeholder="输入编号后回车" autocomplete="off" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono transition">
+                            <input type="text" id="manual-input" inputmode="numeric" pattern="[0-9]*" placeholder="输入编号回车" autocomplete="off" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono transition">
                             <button type="submit" class="w-full bg-slate-800 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition">快速核销</button>
                         </form>
                     </div>
@@ -86,14 +234,17 @@
                         <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                             <p class="text-xs text-slate-500">应到总人数</p>
                             <p class="text-2xl font-bold text-slate-800 mt-1" id="stat-total">0</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5" id="stat-scope">全部人</p>
                         </div>
                         <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                             <p class="text-xs text-slate-500">已签到</p>
                             <p class="text-2xl font-bold text-emerald-600 mt-1" id="stat-checked">0</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5" id="stat-scope-checked">全部人</p>
                         </div>
                         <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                             <p class="text-xs text-slate-500">未签到</p>
                             <p class="text-2xl font-bold text-rose-500 mt-1" id="stat-unchecked">0</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5" id="stat-scope-unchecked">全部人</p>
                         </div>
                     </div>
 
@@ -105,7 +256,7 @@
                                 <span class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded"></span>
                             </div>
                             <div class="flex gap-2 w-full sm:w-auto text-xs">
-                                <button onclick="clearAllUsers()" class="text-slate-500 hover:text-rose-600 hover:underline">清空名单</button>
+                                <button onclick="clearAllUsers()" class="text-slate-500 hover:text-rose-600 hover:underline">清空名单（并重置编号）</button>
                                 <span class="text-slate-300">|</span>
                                 <button onclick="resetData()" class="text-rose-600 hover:underline">重置状态</button>
                                 <span class="text-slate-300">|</span>
@@ -119,9 +270,33 @@
                                 <input type="text" id="search-id" oninput="debouncedRenderTable()" placeholder="编号" autocomplete="off" class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white font-mono">
                                 <input type="text" id="search-name" oninput="debouncedRenderTable()" placeholder="姓名" autocomplete="off" class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                                 <input type="text" id="search-dept" oninput="debouncedRenderTable()" placeholder="部门" autocomplete="off" class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-                                <input type="text" id="search-bus" oninput="debouncedRenderTable()" placeholder="BUS No." autocomplete="off" class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white font-mono">
+                                <input type="text" id="search-bus" oninput="debouncedRenderTable()" placeholder="巴士号" autocomplete="off" class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white font-mono">
                                 <input type="text" id="search-email" oninput="debouncedRenderTable()" placeholder="邮箱" autocomplete="off" class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                             </div>
+
+                            <!-- 巴士×日期快速过滤（三辆巴士的不同负责人在此一键定位自己的班次） -->
+                            <div class="rounded-lg bg-white border border-slate-200 p-2.5 space-y-2">
+                                <div class="flex flex-wrap items-center gap-2 text-xs">
+                                    <span class="w-12 shrink-0 text-slate-500 font-medium">日期</span>
+                                    <div class="chip-group" data-axis="day" aria-label="按日期筛选">
+                                        <button type="button" class="filter-chip active" data-value="all">全部</button>
+                                        <button type="button" class="filter-chip" data-value="1">10.14 (Day 1)</button>
+                                        <button type="button" class="filter-chip" data-value="2">10.15 (Day 2)</button>
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2 text-xs">
+                                    <span class="w-12 shrink-0 text-slate-500 font-medium">巴士</span>
+                                    <div class="chip-group" data-axis="bus" aria-label="按巴士筛选">
+                                        <button type="button" class="filter-chip active" data-value="all">全部</button>
+                                        <button type="button" class="filter-chip" data-value="1">🚌 1 号</button>
+                                        <button type="button" class="filter-chip" data-value="2">🚌 2 号</button>
+                                        <button type="button" class="filter-chip" data-value="3">🚌 3 号</button>
+                                    </div>
+                                    <span id="filter-mode-badge" class="filter-mode-badge ml-auto hidden">🔍 <span id="filter-mode-text">全部</span></span>
+                                    <button onclick="clearBusFilter()" type="button" class="text-slate-400 hover:text-blue-600 hover:underline">重置巴士/日期</button>
+                                </div>
+                            </div>
+
                             <div class="flex flex-wrap items-center gap-2 text-xs">
                                 <label class="flex items-center gap-1.5 text-slate-500">
                                     排序：
@@ -151,7 +326,7 @@
                                         <th class="p-3">编号</th>
                                         <th class="p-3">姓名</th>
                                         <th class="p-3">部门</th>
-                                        <th class="p-3">BUS No.</th>
+                                        <th class="p-3">BUS (10.14 / 10.15)</th>
                                         <th class="p-3">邮箱</th>
                                         <th class="p-3">状态</th>
                                         <th class="p-3">时间</th>
@@ -287,7 +462,82 @@
             .subscribe();
     }
 
-    // ---------------- 3. 音效与 Tab 切换 ----------------
+    // ---------------- 3. 音效、Toast 弹窗、扫码小记 ----------------
+    // 默认不自动关闭——必须由用户点击「确定」按钮 / 按 Esc / 点击遮罩 才能关闭
+    // 显式传 autoMs 为正数才会按指定毫秒自动关闭（目前没有调用方使用，留作扩展）
+    let _toastTimer = null;
+
+    /**
+     * 显示全屏扫码结果弹窗
+     * @param {'success'|'error'|'warning'} type
+     * @param {string} title       粗体标题
+     * @param {string} [subtitle]  灰色副文（姓名/部门/时间等）
+     * @param {number} [autoMs]    显式指定自动关闭毫秒数；不传则不自动关，必须手动关闭
+     */
+    function showToast(type, title, subtitle = '', autoMs) {
+        const bd = document.getElementById('toast-backdrop');
+        const card = document.getElementById('toast-card');
+        const ic = document.getElementById('toast-icon');
+        const tt = document.getElementById('toast-title');
+        const ts = document.getElementById('toast-sub');
+
+        if (!bd || !card) return;
+
+        // 颜色 + 图标
+        card.className = type || 'success';
+        if (type === 'success')      ic.textContent = '✅';
+        else if (type === 'warning') ic.textContent = '⚠️';
+        else                          ic.textContent = '❌';
+
+        tt.textContent = title;
+        ts.innerHTML   = subtitle;
+
+        // 显示前重置 transform 动画
+        card.style.transform = 'scale(0.85) translateY(-24px)';
+        // 触发下一帧添加 .show，保证动画播放
+        requestAnimationFrame(() => bd.classList.add('show'));
+
+        // 移动端震动提示
+        try {
+            if (navigator.vibrate) {
+                if (type === 'success') navigator.vibrate(80);
+                else if (type === 'warning') navigator.vibrate([60, 50, 60]);
+                else navigator.vibrate([120, 60, 120]);
+            }
+        } catch (e) { /* noop */ }
+
+        // 自动关闭：默认不启用，必须手动关（避免现场漏看结果）
+        if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
+        if (typeof autoMs === 'number' && autoMs > 0) {
+            _toastTimer = setTimeout(hideToast, autoMs);
+        }
+    }
+
+    function hideToast() {
+        const bd = document.getElementById('toast-backdrop');
+        if (bd) bd.classList.remove('show');
+        if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
+    }
+
+    // Esc 关闭弹窗
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') hideToast();
+    });
+
+    // 扫码小记：保留最近 6 条，按时间倒序在上
+    function appendScanLog(type, name, extra) {
+        const box = document.getElementById('scan-log');
+        if (!box) return;
+        const now = new Date();
+        const t = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+        const row = document.createElement('div');
+        row.className = 'log-row ' + (type === 'success' ? 's' : type === 'warning' ? 'w' : 'e');
+        const tag = type === 'success' ? '✓' : type === 'warning' ? '!' : '✗';
+        row.innerHTML = `<span class="t">${t}</span><span class="tag">${tag}</span><span class="n">${name}${extra ? ' · ' + extra : ''}</span>`;
+        box.insertBefore(row, box.firstChild);
+        while (box.children.length > 6) box.removeChild(box.lastChild);
+    }
+
     function playBeep(type) {
         try {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -358,27 +608,36 @@
 
     async function processCheckin(keyword) {
         const resultBox = document.getElementById('scan-result');
-        if (!resultBox) return;
-        resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border transition-all block";
+        if (resultBox) resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border transition-all block";
 
-        const target = keyword.trim().toLowerCase();
-        if (!target) return;
+        const trimmed = String(keyword || '').trim();
+        if (!trimmed) return;
 
-        const user = users.find(u =>
-            (u.email && u.email.toLowerCase() === target) ||
-            u.name.toLowerCase() === target ||
-            (String(u.id) === keyword.trim()) ||
-            (u.busNo !== null && u.busNo !== undefined && String(u.busNo) === keyword.trim())
-        );
+        // 严格按「编号」匹配——QR 卡片也是按 u.id 编码，所以扫码与手动输入走同一条路径
+        const user = users.find(u => String(u.id) === trimmed);
 
         if (!user) {
             playBeep('error');
-            resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-rose-100 text-rose-800 border-rose-200";
-            resultBox.innerText = `❌ 验证失败：未找到匹配人员 (${keyword})`;
+            if (resultBox) {
+                resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-rose-100 text-rose-800 border-rose-200";
+                resultBox.innerText = `❌ 验证失败：未找到编号 ${trimmed} 对应的参会者`;
+            }
+            showToast('error', '未找到匹配人员',
+                `<div>编号：<code style="font-family:monospace;background:#f1f5f9;padding:1px 6px;border-radius:4px;">${trimmed}</code></div>` +
+                `<div style="margin-top:.5rem;">请核对编号是否正确，或让参会者使用二维码自助签到</div>`);
+            appendScanLog('error', `未匹配 #${trimmed}`);
+
         } else if (user.checked) {
             playBeep('warning');
-            resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-amber-100 text-amber-800 border-amber-200";
-            resultBox.innerText = `⚠️ 重复签到：${user.name} (${user.dept || '未知部门'}) 已于 ${fmtTime(user.checkTime)} 入场`;
+            if (resultBox) {
+                resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-amber-100 text-amber-800 border-amber-200";
+                resultBox.innerText = `⚠️ 重复签到：${user.name} (${user.dept || '未知部门'}) 已于 ${fmtTime(user.checkTime)} 入场`;
+            }
+            showToast('warning', `${user.name} 重复签到`,
+                `<div>${user.dept ? user.dept + ' · ' : ''}编号 #${user.id}</div>` +
+                `<div style="margin-top:.5rem;color:#b45309;">已于 ${fmtTime(user.checkTime)} 入场，请确认是否同一人</div>`);
+            appendScanLog('warning', user.name, `已签到 ${fmtTime(user.checkTime)}`);
+
         } else {
             playBeep('success');
 
@@ -389,14 +648,22 @@
 
             if (error) {
                 alert('核销失败：' + error.message);
+                showToast('error', '签到失败', error.message);
+                appendScanLog('error', user.name, '云端写入失败');
                 return;
             }
 
-            resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-emerald-100 text-emerald-800 border-emerald-200";
-            resultBox.innerText = `✅ 签到成功！欢迎：${user.name}（${user.dept || '无部门信息'}）`;
+            if (resultBox) {
+                resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-emerald-100 text-emerald-800 border-emerald-200";
+                resultBox.innerText = `✅ 签到成功！欢迎：${user.name}（${user.dept || '无部门信息'}）`;
+            }
+            showToast('success', `${user.name}`,
+                `<div>${user.dept || '无部门信息'} · 编号 #${user.id}</div>` +
+                `<div style="margin-top:.5rem;color:#047857;font-weight:600;">✅ 已签到 · ${fmtTime(new Date())}</div>`);
+            appendScanLog('success', user.name, `编号 #${user.id}`);
         }
 
-        setTimeout(() => { resultBox.classList.add('hidden'); }, 4000);
+        if (resultBox) setTimeout(() => { resultBox.classList.add('hidden'); }, 4000);
     }
 
     function handleManualVerify(event) {
@@ -443,6 +710,27 @@
         });
     }
 
+    // 摄像头连续扫描时会对同一 QR 在画面停留期间多次触发 success 回调，
+    // 这里按「最近一次扫描文本 + 时间」做去重：相同内容在 2.5 秒内只处理一次。
+    // 不同内容(新 QR)立即放行，不会被卡住。
+    const SCAN_DEDUPE_MS = 2500;
+    let _scanDedupText = '';
+    let _scanDedupAt = 0;
+    function dedupeScan(text) {
+        const now = Date.now();
+        if (text === _scanDedupText && (now - _scanDedupAt) < SCAN_DEDUPE_MS) {
+            console.log('[扫码去重] 抑制重复扫描:', text, '距上次', (now - _scanDedupAt) + 'ms');
+            return false;
+        }
+        _scanDedupText = text;
+        _scanDedupAt = now;
+        return true;
+    }
+    function resetScanDedup() {
+        _scanDedupText = '';
+        _scanDedupAt = 0;
+    }
+
     // 确保扫码库已加载：双 CDN 容错（jsdelivr 主源 + unpkg 备源）
     async function ensureHtml5Qrcode() {
         if (typeof Html5Qrcode !== 'undefined') return;
@@ -468,6 +756,7 @@
                 await html5QrcodeScanner.stop();
                 html5QrcodeScanner = null;
             }
+            resetScanDedup();
             isScannerRunning = false;
             btn.innerText = "开启摄像头";
             btn.className = "flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition text-sm";
@@ -495,7 +784,11 @@
 
             html5QrcodeScanner = new Html5Qrcode("reader");
             const cfg = { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 };
-            const onScan = (text) => processCheckin(text);
+            const onScan = (text) => {
+                // 同一 QR 在画面停留期间 html5-qrcode 会反复回调，这里去重避免在扫码记录中重复写多条
+                if (!dedupeScan(text)) return;
+                processCheckin(text);
+            };
 
             // 4) 优先后置摄像头；个别机型不支持 facingMode 时，回退为枚举设备ID
             try {
@@ -530,9 +823,9 @@
     function downloadTemplate() {
         const rows = [
             ["姓名", "部门", "BUS No.", "邮箱"],
-            ["张三", "研发部", 1, "zhangsan@company.com"],
-            ["李四", "市场部", 2, "lisi@company.com"],
-            ["王五", "财务部", 1, "wangwu@company.com"]
+            ["张三", "研发部", "1/2", "zhangsan@company.com"],
+            ["李四", "市场部", "1", "lisi@company.com"],
+            ["王五", "财务部", "2/2", "wangwu@company.com"]
         ];
         const ws = XLSX.utils.aoa_to_sheet(rows);
         ws['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 10 }, { wch: 28 }];
@@ -546,20 +839,16 @@
             return alert("没有可导入的有效数据行！\n请检查表格：姓名列不能为空，且列名需为「姓名 / 部门 / 邮箱」。\n建议点击「下载标准导入模板」按模板填写。");
         }
 
-        // BUS No. 在云端为整数列（smallint），导入前统一校验/转换
+        // BUS No. 在云端为 text 列，允许单日或两日行程：单日 "3"、两日 "1/2"（也支持 "1 / 2"、"1|2" 等写法）
         function parseBusNo(raw) {
             const s = String(raw === null || raw === undefined ? '' : raw).trim();
-            if (s === '') return null;
-            const n = Number(s);
-            if (!Number.isInteger(n)) return NaN; // 非整数 → 无效
-            return n;
+            return s === '' ? null : s;
         }
 
         // 以邮箱作为查重依据（无邮箱的行直接导入），避免重复导入同一批人
         const existingEmails = new Set(users.map(u => String(u.email || '').trim().toLowerCase()).filter(Boolean));
         const rows = [];
         const skipped = [];
-        const invalidBus = [];
 
         newUsersList.forEach(u => {
             const email = String(u.email || '').trim();
@@ -569,25 +858,15 @@
             }
             if (email) existingEmails.add(email.toLowerCase());
 
-            const bus = parseBusNo(u.busNo);
-            if (Number.isNaN(bus)) {
-                invalidBus.push(`${u.name}（BUS No.: ${u.busNo} 不是数字）`);
-                return;
-            }
-
             rows.push({
                 name: String(u.name || '').trim() || '未知姓名',
                 dept: String(u.dept || '').trim(),
                 email: email,
-                bus_no: bus,
+                bus_no: parseBusNo(u.busNo),
                 checked: false,
                 check_time: null
             });
         });
-
-        if (invalidBus.length > 0) {
-            alert(`以下 ${invalidBus.length} 条记录的 BUS No. 不是数字，已跳过（BUS No. 必须为整数，如 1、2、3）：\n${invalidBus.slice(0, 10).join('\n')}${invalidBus.length > 10 ? '\n...' : ''}`);
-        }
 
         if (rows.length === 0) {
             return alert(`没有可导入的有效数据行！\n${skipped.length > 0 ? `跳过 ${skipped.length} 条重复记录。\n` : ''}请检查表格内容后重试。`);
@@ -605,7 +884,7 @@
             } else if (error.code === '42703') {
                 hint = `表缺少对应的列（${error.message}）。\n请检查 checkin_users 表结构是否包含：name、dept、email、bus_no、checked、check_time。`;
             } else {
-                hint = '请使用「下载标准导入模板」生成的表格填写（列：姓名、部门、BUS No.、邮箱）。BUS No. 必须为整数。';
+                hint = '请使用「下载标准导入模板」生成的表格填写（列：姓名、部门、BUS No.、邮箱）。BUS No. 支持单日（如 3）或两日行程（如 1/2）。';
             }
             alert(`导入云端失败：${error.message}\n\n排查建议：\n${hint}`);
         } else {
@@ -613,6 +892,41 @@
             if (skipped.length > 0) tip += `\n跳过 ${skipped.length} 条重复记录。`;
             alert(tip);
         }
+    }
+
+    // ---------------- 6.5 BUS No. 解析与渲染辅助 ----------------
+    // BUS No. 现在是文本：单日 "3"、两日 "1/2"（也支持 "1 / 2"、"1|2"、逗号分隔等写法）
+    // 把任意格式拆成两日显示值
+    function parseBusDays(raw) {
+        const t = String(raw ?? '').trim();
+        if (!t) return { day1: '-', day2: '-', raw: '' };
+        const parts = t.split(/[\/\|,]/).map(s => s.trim()).filter(Boolean);
+        return {
+            day1: parts[0] || '-',
+            day2: parts[1] || parts[0] || '-',
+            raw: t
+        };
+    }
+    // 单行紧凑：10.14: 1 · 10.15: 2  (HTML 票面、搜索提示用)
+    function formatBusInline(raw) {
+        const p = parseBusDays(raw);
+        if (!p.raw) return 'BUS: -';
+        return `10.14: ${p.day1}  ·  10.15: ${p.day2}`;
+    }
+    // 双行（用于 PNG 大卡）：逐日独立展示，无中文
+    function formatBusTwoLines(raw) {
+        const p = parseBusDays(raw);
+        if (!p.raw) return { line1: 'BUS: -', line2: '' };
+        return {
+            line1: `Day 1: Bus No.${p.day1}`,
+            line2: `Day 2: Bus No.${p.day2}`
+        };
+    }
+    // HTML 双行（表格单元格用，bold 两日）
+    function formatBusHtml(raw) {
+        const p = parseBusDays(raw);
+        if (!p.raw) return 'BUS: -';
+        return `10.14: <b>${p.day1}</b><br>10.15: <b>${p.day2}</b>`;
     }
 
     function handleFileUpload(event) {
@@ -714,35 +1028,141 @@
         if (so) so.value = 'time';
         const fs = document.getElementById('filter-status');
         if (fs) fs.value = 'all';
-        renderTable();
+        clearBusFilter();
     }
+
+    // ===== 巴士×日期 快速过滤 =====
+    // filterDay: 'all' | '1' | '2'
+    // filterBus: 'all' | '1' | '2' | '3'
+    let filterDay = 'all';
+    let filterBus = 'all';
+
+    // 根据 bus_no 文本（如 "1/2"、"3"、""）拆出 day1/day2；
+    // 用于把 bus_no 字段与选择器对齐做匹配
+    // 语义：选了「具体某天」时，bus 筛选只看那一天；选了「全部日子」时，bus 筛选看任何一天是否坐过
+    function busMatchesUser(u) {
+        // 全部+全部 视为不过滤
+        if (filterDay === 'all' && filterBus === 'all') return true;
+
+        const b = parseBusDays(u.busNo);
+        const hasDay1 = b.day1 && b.day1 !== '-';
+        const hasDay2 = b.day2 && b.day2 !== '-';
+
+        // 没有巴士信息的人在任何非默认筛选下都不显示
+        if (!hasDay1 && !hasDay2) return false;
+
+        // 日期维度：选具体某天时，要求那一天必须有数据
+        let dayOk = true;
+        if (filterDay === '1' && !hasDay1) dayOk = false;
+        if (filterDay === '2' && !hasDay2) dayOk = false;
+
+        // 巴士维度：选具体某天时，bus 必须与那一天的车号严格相等；
+        //           选「全部日子」时，任一天坐过选中巴士就算命中
+        let busOk = true;
+        if (filterBus !== 'all') {
+            if (filterDay === '1') {
+                busOk = (b.day1 === filterBus);
+            } else if (filterDay === '2') {
+                busOk = (b.day2 === filterBus);
+            } else {
+                busOk = (b.day1 === filterBus) || (b.day2 === filterBus);
+            }
+        }
+
+        return dayOk && busOk;
+    }
+
+    /**
+     * 顶部统计卡专用——仅按 chip(日期 + 巴士)过滤
+     * 不受搜索框 / 状态筛选 / 排序影响
+     * 语义:「我所负责的班次」应当有多少人、已签、未签
+     */
+    function getBusScopeUsers() {
+        if (filterDay === 'all' && filterBus === 'all') return users;
+        return users.filter(u => busMatchesUser(u));
+    }
+
+    function getFilteredUsers() {
+        const kw = {
+            id:    (document.getElementById('search-id')?.value    || '').trim().toLowerCase(),
+            name:  (document.getElementById('search-name')?.value  || '').trim().toLowerCase(),
+            dept:  (document.getElementById('search-dept')?.value  || '').trim().toLowerCase(),
+            bus:   (document.getElementById('search-bus')?.value   || '').trim().toLowerCase(),
+            email: (document.getElementById('search-email')?.value || '').trim().toLowerCase()
+        };
+        const statusFilter = document.getElementById('filter-status')?.value || 'all';
+
+        return users.filter(u => {
+            if (kw.id    && !String(u.id).toLowerCase().includes(kw.id)) return false;
+            if (kw.name  && !String(u.name  || '').toLowerCase().includes(kw.name)) return false;
+            if (kw.dept  && !String(u.dept  || '').toLowerCase().includes(kw.dept)) return false;
+            if (kw.bus   && !(u.busNo !== null && u.busNo !== undefined && String(u.busNo).toLowerCase().includes(kw.bus))) return false;
+            if (kw.email && !String(u.email || '').toLowerCase().includes(kw.email)) return false;
+            if (statusFilter === 'checked'   && !u.checked) return false;
+            if (statusFilter === 'unchecked' &&  u.checked) return false;
+            if (!busMatchesUser(u)) return false;
+            return true;
+        });
+    }
+
+    // 顶部徽章：把当前筛选条件可视化，免得忘了当前在看哪班
+    function updateFilterModeBadge() {
+        const badge = document.getElementById('filter-mode-badge');
+        const txt = document.getElementById('filter-mode-text');
+        if (!badge || !txt) return;
+        const hasFilter = filterDay !== 'all' || filterBus !== 'all';
+        if (!hasFilter) {
+            badge.classList.add('hidden');
+            return;
+        }
+        const dayText = filterDay === 'all' ? '全部日子' : (filterDay === '1' ? 'Day 1 (10.14)' : 'Day 2 (10.15)');
+        const busText = filterBus === 'all' ? '全部巴士' : `Bus ${filterBus}`;
+        txt.textContent = `${dayText} · ${busText}`;
+        badge.classList.remove('hidden');
+    }
+
+    // 单选切换某轴的筛选值
+    function selectBusFilter(axis, value) {
+        if (axis === 'day') filterDay = value;
+        else if (axis === 'bus') filterBus = value;
+        else return;
+        document.querySelectorAll(`.chip-group[data-axis="${axis}"] .filter-chip`).forEach(b => {
+            b.classList.toggle('active', b.dataset.value === value);
+        });
+        updateFilterModeBadge();
+        renderTable();
+        renderStats();
+    }
+
+    function clearBusFilter() {
+        filterDay = 'all';
+        filterBus = 'all';
+        document.querySelectorAll('.chip-group .filter-chip').forEach(b => {
+            b.classList.toggle('active', b.dataset.value === 'all');
+        });
+        updateFilterModeBadge();
+        renderTable();
+        renderStats();
+    }
+
+    // 事件委托：所有 chip 点击统一拦截，避免在每个按钮上 inline-bind
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.filter-chip');
+        if (!btn) return;
+        const group = btn.closest('.chip-group');
+        if (!group) return;
+        const axis = group.dataset.axis;
+        if (!axis) return;
+        selectBusFilter(axis, btn.dataset.value);
+    });
 
     function renderTable() {
         const tbody = document.getElementById('table-body');
         if (!tbody) return;
         tbody.innerHTML = '';
 
-        // 分字段读取搜索关键字（空值不过滤）
-        const kw = {
-            id: (document.getElementById('search-id')?.value || '').trim().toLowerCase(),
-            name: (document.getElementById('search-name')?.value || '').trim().toLowerCase(),
-            dept: (document.getElementById('search-dept')?.value || '').trim().toLowerCase(),
-            bus: (document.getElementById('search-bus')?.value || '').trim().toLowerCase(),
-            email: (document.getElementById('search-email')?.value || '').trim().toLowerCase()
-        };
-        const statusFilter = document.getElementById('filter-status')?.value || 'all';
         const sortOrder = document.getElementById('sort-order')?.value || 'time';
-
-        let filteredUsers = users.filter(u => {
-            if (kw.id && !String(u.id).toLowerCase().includes(kw.id)) return false;
-            if (kw.name && !String(u.name || '').toLowerCase().includes(kw.name)) return false;
-            if (kw.dept && !String(u.dept || '').toLowerCase().includes(kw.dept)) return false;
-            if (kw.bus && !(u.busNo !== null && u.busNo !== undefined && String(u.busNo).toLowerCase().includes(kw.bus))) return false;
-            if (kw.email && !String(u.email || '').toLowerCase().includes(kw.email)) return false;
-            if (statusFilter === 'checked' && !u.checked) return false;
-            if (statusFilter === 'unchecked' && u.checked) return false;
-            return true;
-        });
+        let filteredUsers = getFilteredUsers();
 
         // 排序：默认按签到时间倒序（最新扫码在最上面，方便核对）；未签到人员固定排在最后
         const ts = u => {
@@ -773,7 +1193,7 @@
                 <td class="p-3 font-mono text-xs font-semibold text-slate-600">${item.id}</td>
                 <td class="p-3 font-medium text-slate-800">${item.name}</td>
                 <td class="p-3 text-xs text-slate-600">${item.dept || '-'}</td>
-                <td class="p-3 font-mono text-xs text-slate-600">${item.busNo !== null && item.busNo !== undefined ? item.busNo : '-'}</td>
+                <td class="p-3 font-mono text-xs text-slate-600 leading-tight">${formatBusHtml(item.busNo)}</td>
                 <td class="p-3 font-mono text-xs text-slate-500">${item.email || '-'}</td>
                 <td class="p-3">
                     ${item.checked
@@ -798,11 +1218,29 @@
     }
 
     function renderStats() {
-        const total = users.length;
-        const checked = users.filter(u => u.checked).length;
-        if (document.getElementById('stat-total')) document.getElementById('stat-total').innerText = total;
-        if (document.getElementById('stat-checked')) document.getElementById('stat-checked').innerText = checked;
-        if (document.getElementById('stat-unchecked')) document.getElementById('stat-unchecked').innerText = total - checked;
+        // 顶部统计严格按 chip 联动——让负责人一眼看到自己班次的进度,
+        // 与搜索框 / 状态筛选 / 排序完全独立,避免时序混乱
+        const list = getBusScopeUsers();
+        const total = list.length;
+        const checked = list.filter(u => u.checked).length;
+        if (document.getElementById('stat-total'))     document.getElementById('stat-total').innerText     = total;
+        if (document.getElementById('stat-checked'))   document.getElementById('stat-checked').innerText   = checked;
+        if (document.getElementById('stat-unchecked')) document.getElementById('stat-unchecked').innerText = Math.max(0, total - checked);
+
+        // 副标题:直观告诉用户当前统计针对哪个范围
+        const scopeText = (filterDay === 'all' && filterBus === 'all')
+            ? '全部人'
+            : (() => {
+                const d = filterDay === 'all' ? 'Day 1+2' : (filterDay === '1' ? 'Day 1' : 'Day 2');
+                const b = filterBus === 'all' ? '全部巴士' : `Bus ${filterBus}`;
+                return `${d} · ${b}`;
+            })();
+        ['stat-scope', 'stat-scope-checked', 'stat-scope-unchecked'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = scopeText;
+        });
+
+        updateFilterModeBadge();
     }
 
     function renderTickets() {
@@ -823,7 +1261,7 @@
                 <div class="text-center w-full">
                     <p class="font-bold text-slate-800 text-sm truncate">${u.name}</p>
                     <p class="text-xs text-slate-500 truncate">${u.dept || '-'}</p>
-                    <p class="text-[11px] text-blue-700 font-semibold font-mono truncate">BUS No.: ${u.busNo !== null && u.busNo !== undefined ? u.busNo : '-'}</p>
+                    <p class="text-[11px] text-blue-700 font-semibold font-mono truncate">${formatBusInline(u.busNo)}</p>
                 </div>
                 <div id="${qrId}" class="p-1.5 bg-white border border-slate-200 rounded shadow-inner"></div>
                 <div class="flex items-center gap-2">
@@ -932,24 +1370,21 @@
         ctx.font = 'bold 32px "Microsoft YaHei", "PingFang SC", sans-serif';
         ctx.fillText(String(u.name || ''), W / 2, 58);
 
-        // 部门
-        ctx.fillStyle = '#64748b';
-        ctx.font = '20px "Microsoft YaHei", "PingFang SC", sans-serif';
-        ctx.fillText(String(u.dept || ''), W / 2, 90);
-
-        // 二维码
+        // 二维码（不再渲染部门信息）
         const qr = await makeQrCanvas(u.id, QR_SIZE);
         ctx.drawImage(qr, (W - QR_SIZE) / 2, 110, QR_SIZE, QR_SIZE);
 
         // 编号
         ctx.fillStyle = '#0f172a';
         ctx.font = 'bold 26px monospace';
-        ctx.fillText('编号: ' + u.id, W / 2, 480);
+        ctx.fillText('编号: ' + u.id, W / 2, 478);
 
-        // BUS No.
+        // BUS No. — 两日行程 10.14 / 10.15（仅英文，无中文）
+        const bus = formatBusTwoLines(u.busNo);
         ctx.fillStyle = '#047857';
         ctx.font = 'bold 22px "Microsoft YaHei", sans-serif';
-        ctx.fillText('BUS No.: ' + (u.busNo !== null && u.busNo !== undefined ? u.busNo : '-'), W / 2, 518);
+        ctx.fillText(bus.line1, W / 2, 506);
+        ctx.fillText(bus.line2, W / 2, 538);
 
         return new Promise(resolve => c.toBlob(resolve, 'image/png'));
     }
@@ -1026,37 +1461,64 @@
     // ---------------- 8. 清空与重置 ----------------
     async function resetData() {
         if (confirm("是否重置所有人的签到状态？")) {
+            // 用 id > 0 过滤全表（PostgREST 接受的合法 WHERE），简洁可靠
             const { error } = await supabaseClient
                 .from('checkin_users')
                 .update({ checked: false, check_time: null })
-                .neq('id', 0);
+                .gt('id', 0);
 
             if (error) alert('重置失败: ' + error.message);
         }
     }
 
     async function clearAllUsers() {
-        if (confirm("确定要清空整张云端人员名单吗？此操作无法撤销。")) {
-            const { error } = await supabaseClient
-                .from('checkin_users')
-                .delete()
-                .neq('id', 0);
+        if (!confirm("确定要清空整张云端人员名单并把编号重置为从 1 开始吗？\n\n此操作无法撤销：所有人员记录、自增编号、二维码都将被清空。")) return;
 
-            if (error) alert('清空失败: ' + error.message);
+        // 通过 RPC 一键清空 + 重置自增序列（需先在 Supabase 执行 supabase_fix.sql 创建该函数）
+        const { error } = await supabaseClient.rpc('reset_checkin_sequence');
+
+        if (error) {
+            // 兜底：若函数尚未创建（42883/PGRST202），回退到 id > 0 的 DELETE 并提示
+            if (error.code === '42883' || error.code === 'PGRST202' || /function.*not.*exist/i.test(error.message || '')) {
+                const { error: delErr } = await supabaseClient
+                    .from('checkin_users')
+                    .delete()
+                    .gt('id', 0);
+
+                if (delErr) {
+                    alert('清空失败：' + delErr.message + '\n\n请检查 checkin_users 表的 RLS 策略是否允许 DELETE 匿名访问。');
+                } else {
+                    alert('名单已清空，但编号未重置（因为 reset_checkin_sequence 函数尚未创建）。\n\n📌 要让编号从 1 重新开始，请：\n1. 打开 Supabase → SQL Editor\n2. 执行 checkin-app/supabase_fix.sql 文件末尾的 reset_checkin_sequence 函数\n3. 下次「清空名单」即可自动重置编号');
+                }
+            } else {
+                alert('清空失败：' + error.message);
+            }
         }
     }
 
     function exportCSV() {
-        if (users.length === 0) return alert("暂无数据可导出");
+        // 跟随当前筛选导出——便于巴士负责人直接拿到「我的班次」名单
+        const list = getFilteredUsers();
+        if (list.length === 0) return alert("当前筛选下无数据可导出");
 
-        let csv = "\uFEFF编号,姓名,部门,BUS No.,邮箱,签到状态,签到时间\n";
-        users.forEach(u => {
-            csv += `"${u.id}","${u.name}","${u.dept || '-'}","${u.busNo !== null && u.busNo !== undefined ? u.busNo : '-'}","${u.email || '-'}","${u.checked ? '已签到' : '未签到'}","${fmtTime(u.checkTime)}"\n`;
+        let csv = "编号,姓名,部门,Day 1 巴士 (10.14),Day 2 巴士 (10.15),邮箱,签到状态,签到时间\n";
+        // UTF-8 BOM 保证 Excel 在中文 Windows 下能正确识别编码
+        csv = "\uFEFF" + csv;
+        list.forEach(u => {
+            const b = parseBusDays(u.busNo);
+            csv += `"${u.id}","${u.name}","${u.dept || '-'}","${b.day1}","${b.day2}","${u.email || '-'}","${u.checked ? '已签到' : '未签到'}","${fmtTime(u.checkTime)}"\n`;
         });
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
-        link.setAttribute("download", `签到结果导出_${nowIso().slice(0,10)}.csv`);
+        // 文件名带上筛选条件，便于巴士同事归档
+        let suffix = '';
+        if (filterDay !== 'all' || filterBus !== 'all') {
+            const d = filterDay === 'all' ? 'X' : filterDay;
+            const b = filterBus === 'all' ? 'X' : filterBus;
+            suffix = `_D${d}_Bus${b}`;
+        }
+        link.setAttribute("download", `签到结果导出${suffix}_${nowIso().slice(0,10)}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
