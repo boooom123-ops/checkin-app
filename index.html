@@ -924,10 +924,17 @@
     const SCAN_DEDUPE_MS = 2500;
     let _scanDedupText = '';
     let _scanDedupAt = 0;
+    // 核验流程（含 confirm 确认弹窗、云端写入）执行期间置位：期间到达的解码回调一律丢弃。
+    // 原因：confirm() 会阻塞 JS，弹窗打开期间 html5-qrcode 的解码回调只能排队，
+    // 弹窗一关才集中触发——不挡的话会立刻再弹一轮提示/确认框，看起来就是"重复多次跳出提示"。
+    let _scanBusy = false;
     function dedupeScan(text) {
         const now = Date.now();
         if (text === _scanDedupText && (now - _scanDedupAt) < SCAN_DEDUPE_MS) {
-            console.log('[扫码去重] 抑制重复扫描:', text, '距上次', (now - _scanDedupAt) + 'ms');
+            // 滑动续期：同一张码持续停在镜头前时不断刷新时间戳——只有把码移开画面
+            // 超过 SCAN_DEDUPE_MS（或扫到别的码）之后，同一人才可能再次触发核验，
+            // 否则结果弹窗还没读完，同一张码就又会弹一次（fps=10 时每 2.5 秒重弹一次）
+            _scanDedupAt = now;
             return false;
         }
         _scanDedupText = text;
@@ -993,9 +1000,19 @@
             html5QrcodeScanner = new Html5Qrcode("reader");
             const cfg = { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 };
             const onScan = (text) => {
-                // 同一 QR 在画面停留期间 html5-qrcode 会反复回调，这里去重避免在扫码记录中重复写多条
-                if (!dedupeScan(text)) return;
-                processCheckin(text);
+                // 同一 QR 在画面停留期间 html5-qrcode 会反复回调，这里"滑动去重 + 防重入"
+                // 双保险，避免结果弹窗还开着 / 确认框刚关时同一张码又触发一轮核验提示
+                if (_scanBusy) return;         // 上一轮核验（含确认弹窗、云端写入）还没结束
+                if (!dedupeScan(text)) return; // 同一张码持续在镜头前：滑动窗口去重
+                _scanBusy = true;
+                Promise.resolve(processCheckin(text))
+                    .catch(() => { /* 错误分支已在 processCheckin 内提示 */ })
+                    .finally(() => {
+                        _scanBusy = false;
+                        // 以核验结束时刻刷新去重时间戳：吞掉 confirm 弹窗期间积压、
+                        // 刚刚才集中送达的同一码回调
+                        _scanDedupAt = Date.now();
+                    });
             };
 
             // 4) 优先后置摄像头；个别机型不支持 facingMode 时，回退为枚举设备ID
