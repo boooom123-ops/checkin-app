@@ -152,6 +152,61 @@
             color: #1d4ed8;
             font-weight: 500;
         }
+
+        /* ===== 当前核验班次提示条 ===== */
+        .current-trip-bar {
+            display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+            background: #eff6ff; border: 1px solid #bfdbfe;
+            border-radius: 0.75rem; padding: 0.6rem 0.85rem;
+        }
+        .current-trip-bar .ct-label { font-size: 11px; color: #1d4ed8; font-weight: 500; }
+        .current-trip-bar .ct-value { font-size: 0.85rem; font-weight: 700; color: #1e3a8a; line-height: 1.35; }
+        .current-trip-bar button {
+            font-size: 11px; padding: 3px 8px; border-radius: 0.4rem;
+            background: #fff; border: 1px solid #93c5fd; color: #1d4ed8;
+            cursor: pointer; white-space: nowrap; transition: background .15s;
+        }
+        .current-trip-bar button:hover { background: #dbeafe; }
+
+        /* ===== 四趟乘况看板卡片 ===== */
+        .trip-card {
+            text-align: left; background: #fff;
+            border: 1px solid #e2e8f0; border-radius: 0.75rem;
+            padding: 0.7rem 0.85rem; cursor: pointer;
+            transition: border-color .15s, box-shadow .15s, background .15s;
+        }
+        .trip-card:hover { border-color: #93c5fd; background: #f8fafc; }
+        .trip-card.active { border-color: #2563eb; background: #eff6ff; box-shadow: 0 0 0 2px rgba(37,99,235,.18); }
+        .trip-card .tc-title { font-size: 0.82rem; font-weight: 700; color: #0f172a; }
+        .trip-card .tc-sub { font-size: 0.68rem; color: #64748b; margin-top: 1px; }
+        .trip-card .tc-nums { font-size: 0.72rem; color: #475569; margin-top: 0.5rem; }
+        .trip-card .tc-nums b { font-size: 1.05rem; color: #0f172a; }
+        .trip-card .tc-nums .ok b { color: #047857; }
+        .trip-card .tc-nums .pend b { color: #b45309; }
+        .trip-card .tc-nums .extra b { color: #c2410c; }
+        .trip-bar { height: 6px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin-top: 0.45rem; }
+        .trip-bar > i { display: block; height: 100%; background: #10b981; border-radius: 999px; transition: width .3s; }
+        .trip-tag {
+            float: right; font-size: 10px; line-height: 1.5;
+            padding: 0 6px; border-radius: 999px;
+            background: #2563eb; color: #fff; font-weight: 600;
+        }
+
+        /* ===== 名单表格里的四趟小徽标 ===== */
+        .trip-chips { display: flex; gap: 3px; }
+        .trip-chip {
+            display: inline-block; font-size: 10px; font-family: monospace;
+            line-height: 1.4; padding: 0 5px; border-radius: 5px;
+            border: 1px solid #e2e8f0; background: #f8fafc; color: #94a3b8;
+        }
+        .trip-chip.on    { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+        .trip-chip.done  { border-color: #a7f3d0; background: #ecfdf5; color: #047857; font-weight: 700; }
+        .trip-chip.extra { border-color: #fed7aa; background: #fff7ed; color: #c2410c; font-weight: 700; }
+        .bus-badge {
+            display: inline-block; font-size: 11px; font-family: monospace; font-weight: 600;
+            padding: 1px 7px; border-radius: 999px;
+            background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;
+        }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 font-sans min-h-screen p-4 md:p-8">
@@ -176,7 +231,7 @@
                     <span>FACT Conference APAC现场签到核销系统</span>
                     <span id="status-badge" class="text-xs font-normal px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">系统就绪</span>
                 </h1>
-                <p class="text-sm text-slate-500 mt-1">支持：摄像头扫码 / 快速搜索核销</p>
+                <p class="text-sm text-slate-500 mt-1">支持：摄像头扫码 / 姓名、部门、邮箱快速搜索核销</p>
             </div>
             <div class="flex gap-2 w-full md:w-auto">
                 <button onclick="switchTab('scanner')" id="tab-scanner" class="flex-1 md:flex-none px-4 py-2 bg-blue-600 text-white font-medium rounded-lg shadow-sm hover:bg-blue-700 transition">现场签到窗口</button>
@@ -190,6 +245,15 @@
 
                 <!-- 左侧：扫码设备控制区 -->
                 <div class="md:col-span-1 space-y-6">
+                    <!-- 当前核验班次：扫码/手动输入都会记入此处选中的趟次 -->
+                    <div class="current-trip-bar">
+                        <div>
+                            <p class="ct-label">当前核验班次</p>
+                            <p id="current-trip-label" class="ct-value">第一趟 · 10.14 Anandi Hotel → Huangpu River Cruise</p>
+                        </div>
+                        <button type="button" onclick="nextTrip()">切换下一趟 ▸</button>
+                    </div>
+
                     <!-- 方案 A：摄像头扫码 -->
                     <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col items-center">
                         <div class="flex justify-between items-center w-full mb-3 border-b pb-2">
@@ -215,7 +279,7 @@
                             <h2 class="text-base font-semibold text-slate-800">方案 B：手动验证</h2>
                             <span class="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-medium">应急降级</span>
                         </div>
-                        <p class="text-xs text-slate-400">只支持输入<strong class="text-slate-600">参会者编号</strong>(如 <code class="px-1 bg-slate-100 rounded font-mono">12</code>)。</p>
+                        <p class="text-xs text-slate-400">只支持输入<strong class="text-slate-600">参会者编号</strong>(如 <code class="px-1 bg-slate-100 rounded font-mono">12</code>)，核验结果记入<b class="text-slate-600">当前核验班次</b>;姓名 / 邮箱 / BUS No. 请在右侧名单上方搜索框输入。</p>
 
                         <form onsubmit="handleManualVerify(event)" class="space-y-2">
                             <input type="text" id="manual-input" inputmode="numeric" pattern="[0-9]*" placeholder="输入编号回车" autocomplete="off" class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono transition">
@@ -229,23 +293,18 @@
 
                 <!-- 右侧：实时看板与模糊检索列表 -->
                 <div class="md:col-span-2 space-y-6">
-                    <!-- 数据统计看板 -->
-                    <div class="grid grid-cols-3 gap-4">
-                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                            <p class="text-xs text-slate-500">应到总人数</p>
-                            <p class="text-2xl font-bold text-slate-800 mt-1" id="stat-total">0</p>
-                            <p class="text-[11px] text-slate-400 mt-0.5" id="stat-scope">全部人</p>
+                    <!-- 四趟乘况看板：点击卡片即切换「当前核验班次」 -->
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <div class="flex items-center gap-2">
+                                <span class="font-semibold text-slate-800">四趟乘况看板</span>
+                                <span class="text-[11px] text-slate-400">应乘 / 已乘 / 未乘</span>
+                            </div>
+                            <span id="board-scope" class="text-[11px] text-slate-400">全部人员</span>
                         </div>
-                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                            <p class="text-xs text-slate-500">已签到</p>
-                            <p class="text-2xl font-bold text-emerald-600 mt-1" id="stat-checked">0</p>
-                            <p class="text-[11px] text-slate-400 mt-0.5" id="stat-scope-checked">全部人</p>
-                        </div>
-                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                            <p class="text-xs text-slate-500">未签到</p>
-                            <p class="text-2xl font-bold text-rose-500 mt-1" id="stat-unchecked">0</p>
-                            <p class="text-[11px] text-slate-400 mt-0.5" id="stat-scope-unchecked">全部人</p>
-                        </div>
+                        <div id="trip-board" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
+                        <p id="trip-data-warning" class="hidden text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 mt-3 leading-relaxed"></p>
+                        <p class="text-[11px] text-slate-400 mt-3">点击任意趟次卡片可切换「当前核验班次」——扫码与手动输入都会记入所选趟次。人员是否乘坐某趟由名单中的四趟标记决定。</p>
                     </div>
 
                     <!-- 实时列表 + 方案 C（快速搜索手签） -->
@@ -274,14 +333,19 @@
                                 <input type="text" id="search-email" oninput="debouncedRenderTable()" placeholder="邮箱" autocomplete="off" class="w-full p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                             </div>
 
-                            <!-- 巴士×日期快速过滤（三辆巴士的不同负责人在此一键定位自己的班次） -->
+                            <!-- 趟次×巴士快速过滤（两辆车按同一行程跑四趟，负责人可一键定位自己的班次）
+                                 芯片只显示「第N趟」——原来把「日期 + 全程路线」写进芯片，
+                                 芯片组宽度固定成 937px，在 1300px 以下会被父容器的 overflow:hidden
+                                 裁掉，第三/第四趟直接看不见也点不到。完整行程放在 title 提示里，
+                                 并同时显示在左侧「当前核验班次」条上，信息不丢失。 -->
                             <div class="rounded-lg bg-white border border-slate-200 p-2.5 space-y-2">
                                 <div class="flex flex-wrap items-center gap-2 text-xs">
-                                    <span class="w-12 shrink-0 text-slate-500 font-medium">日期</span>
-                                    <div class="chip-group" data-axis="day" aria-label="按日期筛选">
-                                        <button type="button" class="filter-chip active" data-value="all">全部</button>
-                                        <button type="button" class="filter-chip" data-value="1">10.14 (Day 1)</button>
-                                        <button type="button" class="filter-chip" data-value="2">10.15 (Day 2)</button>
+                                    <span class="w-12 shrink-0 text-slate-500 font-medium">趟次</span>
+                                    <div class="chip-group" data-axis="trip" aria-label="按趟次筛选">
+                                        <button type="button" class="filter-chip active" data-value="1" title="第一趟 · 10.14 Anandi Hotel → Huangpu River Cruise">第一趟</button>
+                                        <button type="button" class="filter-chip" data-value="2" title="第二趟 · 10.14 Huangpu River Cruise → Anandi Hotel">第二趟</button>
+                                        <button type="button" class="filter-chip" data-value="3" title="第三趟 · 10.15 RBCN → UAES">第三趟</button>
+                                        <button type="button" class="filter-chip" data-value="4" title="第四趟 · 10.15 UAES → RBCN">第四趟</button>
                                     </div>
                                 </div>
                                 <div class="flex flex-wrap items-center gap-2 text-xs">
@@ -290,10 +354,9 @@
                                         <button type="button" class="filter-chip active" data-value="all">全部</button>
                                         <button type="button" class="filter-chip" data-value="1">🚌 1 号</button>
                                         <button type="button" class="filter-chip" data-value="2">🚌 2 号</button>
-                                        <button type="button" class="filter-chip" data-value="3">🚌 3 号</button>
                                     </div>
-                                    <span id="filter-mode-badge" class="filter-mode-badge ml-auto hidden">🔍 <span id="filter-mode-text">全部</span></span>
-                                    <button onclick="clearBusFilter()" type="button" class="text-slate-400 hover:text-blue-600 hover:underline">重置巴士/日期</button>
+                                    <span id="filter-mode-badge" class="filter-mode-badge ml-auto">🔍 <span id="filter-mode-text">全部</span></span>
+                                    <button onclick="clearBusFilter()" type="button" class="text-slate-400 hover:text-blue-600 hover:underline">重置筛选</button>
                                 </div>
                             </div>
 
@@ -301,17 +364,18 @@
                                 <label class="flex items-center gap-1.5 text-slate-500">
                                     排序：
                                     <select id="sort-order" onchange="renderTable()" class="p-1 border border-slate-300 rounded-md bg-white outline-none focus:ring-2 focus:ring-blue-500">
-                                        <option value="time" selected>最新签到在前</option>
-                                        <option value="time-asc">最早签到在前</option>
+                                        <option value="time" selected>本趟最新核验在前</option>
+                                        <option value="time-asc">本趟最早核验在前</option>
                                         <option value="id">按编号排序</option>
                                     </select>
                                 </label>
                                 <label class="flex items-center gap-1.5 text-slate-500">
-                                    状态：
+                                    本趟状态：
                                     <select id="filter-status" onchange="renderTable()" class="p-1 border border-slate-300 rounded-md bg-white outline-none focus:ring-2 focus:ring-blue-500">
-                                        <option value="all" selected>全部</option>
-                                        <option value="checked">已签到</option>
-                                        <option value="unchecked">未签到</option>
+                                        <option value="all" selected>全部人员</option>
+                                        <option value="on">仅本趟名单</option>
+                                        <option value="boarded">本趟已核验</option>
+                                        <option value="pending">本趟待核验</option>
                                     </select>
                                 </label>
                                 <button onclick="clearFilters()" class="text-slate-400 hover:text-blue-600 hover:underline">清空筛选</button>
@@ -326,10 +390,13 @@
                                         <th class="p-3">编号</th>
                                         <th class="p-3">姓名</th>
                                         <th class="p-3">部门</th>
-                                        <th class="p-3">BUS (10.14 / 10.15)</th>
+                                        <th class="p-3">BUS</th>
+                                        <th class="p-3">
+                                            四趟乘况
+                                            <span class="block text-[10px] font-normal text-slate-400">T1/T2/T3/T4 · 蓝=应乘 绿=已乘</span>
+                                        </th>
+                                        <th class="p-3">本趟状态</th>
                                         <th class="p-3">邮箱</th>
-                                        <th class="p-3">状态</th>
-                                        <th class="p-3">时间</th>
                                         <th class="p-3 text-right">操作</th>
                                     </tr>
                                 </thead>
@@ -358,11 +425,11 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 0115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
                             </svg>
                             <p class="mt-2 text-xs font-semibold text-blue-600">点击上传 Excel / CSV 文件</p>
-                            <p class="text-[10px] text-slate-400 mt-1">自动解析列：姓名、部门、BUS No.、邮箱</p>
+                            <p class="text-[10px] text-slate-400 mt-1">自动解析列：姓名、部门、BUS No.、四趟乘车标记、邮箱</p>
                         </div>
                         <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event)">
                         <button onclick="downloadTemplate()" class="w-full border border-blue-200 bg-blue-50 text-blue-700 py-2 rounded-lg text-xs font-medium hover:bg-blue-100 transition">⬇ 下载标准导入模板 (Excel)</button>
-                        <p class="text-[10px] text-slate-400 text-center">请按模板列名填写：姓名（必填）、部门、邮箱（建议填写，便于手动核销）</p>
+                        <p class="text-[10px] text-slate-400 text-center">请按模板列名填写：姓名（必填）、BUS No.（1 或 2）、四趟标记（Y/N，留空视为 N）、邮箱（建议填写，便于手动核销）</p>
                     </div>
 
                     <div class="relative flex py-1 items-center">
@@ -374,8 +441,8 @@
                     <!-- 2. 文本批量粘贴区 -->
                     <div class="space-y-2">
                         <label class="block text-xs font-medium text-slate-700">方式二：手动文本粘贴</label>
-                        <p class="text-[10px] text-slate-400">支持逗号或制表符分隔：姓名,部门,BUS No.,邮箱</p>
-                        <textarea id="batch-import-input" rows="5" placeholder="张三,研发部,1,zhangsan@company.com&#10;李四,市场部,2,lisi@company.com" class="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        <p class="text-[10px] text-slate-400">支持逗号或制表符分隔：姓名,部门,BUS No.,第一趟,第二趟,第三趟,第四趟,邮箱（四趟用 Y/N 或 1/0）</p>
+                        <textarea id="batch-import-input" rows="5" placeholder="张三,研发部,1,Y,Y,Y,Y,zhangsan@company.com&#10;李四,市场部,2,Y,N,Y,N,lisi@company.com" class="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"></textarea>
                         <button onclick="batchImportText()" class="w-full bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition">批量导入文本</button>
                     </div>
                 </div>
@@ -411,6 +478,38 @@
     let debounceTimer = null;
     let audioCtx = null;
 
+    // ---------------- 1.5 行程与巴士配置 ----------------
+    // 行程共四趟：第一天两趟（Anandi Hotel→Huangpu River Cruise、Huangpu River Cruise→Anandi Hotel），
+    //              第二天两趟（RBCN→UAES、UAES→RBCN）。
+    // 每天两辆车（BUS 1 / BUS 2）跑完全相同的行程，同一人员两天的巴士号统一 → bus_no 为单值。
+    // 每人的「应乘趟次」由 trip1 / trip2 / trip3 / trip4 四个标记决定（人员不一定乘坐全部四趟）。
+    const TRIPS = [
+        { no: 1, label: '第一趟', day: '10.14', route: 'Anandi Hotel → Huangpu River Cruise' },
+        { no: 2, label: '第二趟', day: '10.14', route: 'Huangpu River Cruise → Anandi Hotel' },
+        { no: 3, label: '第三趟', day: '10.15', route: 'RBCN → UAES' },
+        { no: 4, label: '第四趟', day: '10.15', route: 'UAES → RBCN' }
+    ];
+    const BUS_NUMBERS = [1, 2];   // 现只有两辆车；如需增减车辆改这里（同时改筛选芯片）
+
+    let currentTrip = 1;          // 当前核验班次（扫码 / 手动输入都记入该趟）
+
+    function tripDef(no) {
+        return TRIPS.find(t => t.no === Number(no)) || TRIPS[0];
+    }
+    function tripTitle(no) {
+        const t = tripDef(no);
+        return `${t.label} · ${t.day} ${t.route}`;
+    }
+    function tripShort(no) { return 'T' + Number(no); }
+
+    // 某趟的应乘 / 已乘 / 未乘（对已给出的名单子集统计）
+    function tripCounts(list, no) {
+        const planned = list.filter(u => isPlanned(u, no)).length;
+        const boarded = list.filter(u => isBoarded(u, no)).length;
+        const pending = list.filter(u => isPlanned(u, no) && !isBoarded(u, no)).length;
+        return { planned, boarded, pending, extra: Math.max(0, boarded - planned) };
+    }
+
     // ---------------- 2. 页面加载与实时订阅 ----------------
     window.onload = async function() {
         await loadDataFromCloud();   // 从 Supabase 加载云端数据
@@ -443,13 +542,43 @@
             dept: u.dept,
             email: u.email,
             busNo: u.bus_no,
+            // 四趟「应乘」标记（人员不一定乘坐全部四趟）
+            trip1: !!u.trip1,
+            trip2: !!u.trip2,
+            trip3: !!u.trip3,
+            trip4: !!u.trip4,
+            // 四趟「实乘」状态 + 核验时间
+            trip1Checked: !!u.trip1_checked,
+            trip2Checked: !!u.trip2_checked,
+            trip3Checked: !!u.trip3_checked,
+            trip4Checked: !!u.trip4_checked,
+            trip1Time: u.trip1_time,
+            trip2Time: u.trip2_time,
+            trip3Time: u.trip3_time,
+            trip4Time: u.trip4_time,
+            // 整体状态：是否乘过任意一趟 + 最近一次核验时间（保持与旧逻辑/导出兼容）
             checked: u.checked,
             checkTime: u.check_time
         }));
 
+        renderCurrentTripBar();
         renderTable();
         renderStats();
         renderTickets();
+
+        // 名单里一条「应乘趟次」标记都没有时给出明确提示——通常是 Supabase 还没执行
+        // supabase_fix.sql（缺 trip1...trip4 列）或导入的表格缺趟次列，
+        // 不提示的话现场会出现「所有人都不在本趟名单」的困惑
+        const warnEl = document.getElementById('trip-data-warning');
+        if (warnEl) {
+            const hasTripData = users.some(u => TRIPS.some(t => isPlanned(u, t.no)));
+            if (users.length > 0 && !hasTripData) {
+                warnEl.textContent = '⚠️ 当前名单里没有任何「应乘趟次」标记：可能是 Supabase 尚未执行 checkin-app/supabase_fix.sql（缺 trip1/trip2/trip3/trip4 列），或导入的表格缺少趟次列。请先补齐，否则所有人都只能靠扫码时手动「临时补录」。';
+                warnEl.classList.remove('hidden');
+            } else {
+                warnEl.classList.add('hidden');
+            }
+        }
     }
 
     // 2.2 订阅云端数据变动 (多手机/多设备实时同步)
@@ -613,6 +742,9 @@
         const trimmed = String(keyword || '').trim();
         if (!trimmed) return;
 
+        const trip = currentTrip;
+        const tTitle = tripTitle(trip);
+
         // 严格按「编号」匹配——QR 卡片也是按 u.id 编码，所以扫码与手动输入走同一条路径
         const user = users.find(u => String(u.id) === trimmed);
 
@@ -627,40 +759,81 @@
                 `<div style="margin-top:.5rem;">请核对编号是否正确，或让参会者使用二维码自助签到</div>`);
             appendScanLog('error', `未匹配 #${trimmed}`);
 
-        } else if (user.checked) {
+        } else if (isBoarded(user, trip)) {
+            // 本趟已核验——同一趟次内重复扫描只提示，不覆盖原时间
             playBeep('warning');
+            const t = tripTime(user, trip);
             if (resultBox) {
                 resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-amber-100 text-amber-800 border-amber-200";
-                resultBox.innerText = `⚠️ 重复签到：${user.name} (${user.dept || '未知部门'}) 已于 ${fmtTime(user.checkTime)} 入场`;
+                resultBox.innerText = `⚠️ 本趟已核验：${user.name}（${user.dept || '未知部门'}）已于 ${fmtTime(t)} 上车`;
             }
-            showToast('warning', `${user.name} 重复签到`,
+            showToast('warning', `${user.name} 本趟已核验`,
                 `<div>${user.dept ? user.dept + ' · ' : ''}编号 #${user.id}</div>` +
-                `<div style="margin-top:.5rem;color:#b45309;">已于 ${fmtTime(user.checkTime)} 入场，请确认是否同一人</div>`);
-            appendScanLog('warning', user.name, `已签到 ${fmtTime(user.checkTime)}`);
+                `<div style="margin-top:.4rem;">${tTitle}</div>` +
+                `<div style="margin-top:.4rem;color:#b45309;">已于 ${fmtTime(t)} 核验，请确认是否同一人</div>`);
+            appendScanLog('warning', user.name, `${tripShort(trip)} 已核验 ${fmtTime(t)}`);
 
         } else {
+            // 不在本趟名单的人员允许现场补录（临时调换是常态），但需负责人二次确认
+            const planned = isPlanned(user, trip);
+            if (!planned) {
+                const ok = confirm(`${user.name}（${user.dept || '无部门信息'}）不在【${tTitle}】的乘车名单中。\n\n是否按「临时补录」为其核验本趟乘车？`);
+                if (!ok) {
+                    playBeep('warning');
+                    if (resultBox) {
+                        resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-amber-100 text-amber-800 border-amber-200";
+                        resultBox.innerText = `⚠️ 已取消：${user.name} 不在【${tTitle}】名单中`;
+                    }
+                    showToast('warning', `${user.name} 不在本趟名单`,
+                        `<div>${tTitle}</div>` +
+                        `<div style="margin-top:.5rem;">已取消核验。如确实需要乘坐，请再次扫描并在弹窗中确认补录。</div>`);
+                    appendScanLog('warning', user.name, `${tripShort(trip)} 不在名单（已取消）`);
+                    if (resultBox) setTimeout(() => { resultBox.classList.add('hidden'); }, 4000);
+                    return;
+                }
+            }
+
             playBeep('success');
+
+            const now = nowIso();
+            const payload = {
+                checked: true,                       // 整体状态：乘过任意一趟即为 true
+                check_time: now,                     // 整体时间：记录最近一次核验时间
+                ['trip' + trip + '_checked']: true,
+                ['trip' + trip + '_time']: now
+            };
 
             const { error } = await supabaseClient
                 .from('checkin_users')
-                .update({ checked: true, check_time: nowIso() })
+                .update(payload)
                 .eq('id', user.id);
 
             if (error) {
-                alert('核销失败：' + error.message);
-                showToast('error', '签到失败', error.message);
+                alert('核验失败：' + error.message);
+                showToast('error', '核验失败', error.message);
                 appendScanLog('error', user.name, '云端写入失败');
+                if (resultBox) setTimeout(() => { resultBox.classList.add('hidden'); }, 4000);
                 return;
             }
 
+            // 本地即时反馈（不依赖实时订阅），实时订阅到达后会再次以云端为准刷新
+            user['trip' + trip + 'Checked'] = true;
+            user['trip' + trip + 'Time'] = now;
+            user.checked = true;
+            user.checkTime = now;
+            renderTable();
+            renderStats();
+
+            const tag = planned ? '' : '（临时补录）';
             if (resultBox) {
                 resultBox.className = "p-4 rounded-xl text-center text-sm font-semibold border bg-emerald-100 text-emerald-800 border-emerald-200";
-                resultBox.innerText = `✅ 签到成功！欢迎：${user.name}（${user.dept || '无部门信息'}）`;
+                resultBox.innerText = `✅ ${tTitle} 核验成功！${user.name}（${user.dept || '无部门信息'}）${tag}`;
             }
             showToast('success', `${user.name}`,
                 `<div>${user.dept || '无部门信息'} · 编号 #${user.id}</div>` +
-                `<div style="margin-top:.5rem;color:#047857;font-weight:600;">✅ 已签到 · ${fmtTime(new Date())}</div>`);
-            appendScanLog('success', user.name, `编号 #${user.id}`);
+                `<div style="margin-top:.4rem;">${tTitle}${tag}</div>` +
+                `<div style="margin-top:.4rem;color:#047857;font-weight:600;">✅ 已核验 · ${fmtTime(now)}</div>`);
+            appendScanLog('success', user.name, `${tripShort(trip)} 编号 #${user.id}${tag}`);
         }
 
         if (resultBox) setTimeout(() => { resultBox.classList.add('hidden'); }, 4000);
@@ -676,25 +849,60 @@
         input.focus();
     }
 
-    async function toggleCheckinById(id) {
+    // 名单表格里的「本趟签到 / 撤销」按钮——操作对象是当前核验班次
+    async function toggleTripCheckinById(id) {
         const user = users.find(u => u.id === id);
         if (!user) return;
 
-        let newChecked = !user.checked;
-        let newTime = null;
+        const trip = currentTrip;
+        const tTitle = tripTitle(trip);
+        const boarded = isBoarded(user, trip);
 
-        if (user.checked) {
-            if (!confirm(`是否取消 ${user.name} 的签到状态？`)) return;
+        if (!boarded && !isPlanned(user, trip)) {
+            if (!confirm(`${user.name} 不在【${tTitle}】的乘车名单中。\n\n是否按「临时补录」为其核验本趟乘车？`)) return;
+        }
+        if (boarded && !confirm(`是否取消 ${user.name} 在【${tTitle}】的核验记录？`)) return;
+
+        const now = nowIso();
+        const payload = {
+            ['trip' + trip + '_checked']: !boarded,
+            ['trip' + trip + '_time']: boarded ? null : now
+        };
+
+        // 整体状态同步：任一其它趟次已核验 → 仍为已核验；否则回到未核验
+        const otherTimes = TRIPS
+            .filter(t => t.no !== trip && isBoarded(user, t.no))
+            .map(t => tripTime(user, t.no))
+            .filter(Boolean)
+            .sort();
+        if (!boarded) {
+            payload.checked = true;
+            payload.check_time = now;                                  // 最近一次核验时间
+        } else if (otherTimes.length > 0) {
+            payload.checked = true;
+            payload.check_time = otherTimes[otherTimes.length - 1];
         } else {
-            newTime = nowIso();
+            payload.checked = false;
+            payload.check_time = null;
         }
 
         const { error } = await supabaseClient
             .from('checkin_users')
-            .update({ checked: newChecked, check_time: newTime })
+            .update(payload)
             .eq('id', id);
 
-        if (error) alert('操作失败: ' + error.message);
+        if (error) {
+            alert('操作失败: ' + error.message);
+            return;
+        }
+
+        // 本地即时反馈（不依赖实时订阅），实时订阅到达后会再次以云端为准刷新
+        user['trip' + trip + 'Checked'] = !boarded;
+        user['trip' + trip + 'Time'] = boarded ? null : now;
+        user.checked = payload.checked;
+        user.checkTime = payload.check_time;
+        renderTable();
+        renderStats();
     }
 
     // ---------------- 5. 摄像头扫码功能 ----------------
@@ -820,15 +1028,16 @@
     // ---------------- 6. 数据导入 (上传至 Supabase) ----------------
 
     // 6.1 下载标准导入模板（Excel，带示例行）
+    // 四趟标记列：Y/N（也接受 是/否、1/0、TRUE/FALSE），留空视为 N
     function downloadTemplate() {
         const rows = [
-            ["姓名", "部门", "BUS No.", "邮箱"],
-            ["张三", "研发部", "1/2", "zhangsan@company.com"],
-            ["李四", "市场部", "1", "lisi@company.com"],
-            ["王五", "财务部", "2/2", "wangwu@company.com"]
+            ["姓名", "部门", "BUS No.", "第一趟 (10.14 Anandi Hotel→Huangpu River Cruise)", "第二趟 (10.14 Huangpu River Cruise→Anandi Hotel)", "第三趟 (10.15 RBCN→UAES)", "第四趟 (10.15 UAES→RBCN)", "邮箱"],
+            ["张三", "研发部", "1", "Y", "Y", "Y", "Y", "zhangsan@company.com"],
+            ["李四", "市场部", "2", "Y", "N", "Y", "N", "lisi@company.com"],
+            ["王五", "财务部", "2", "N", "N", "Y", "Y", "wangwu@company.com"]
         ];
         const ws = XLSX.utils.aoa_to_sheet(rows);
-        ws['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 10 }, { wch: 28 }];
+        ws['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 10 }, { wch: 38 }, { wch: 40 }, { wch: 26 }, { wch: 24 }, { wch: 28 }];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "签到名单");
         XLSX.writeFile(wb, "签到名单导入模板.xlsx");
@@ -839,16 +1048,11 @@
             return alert("没有可导入的有效数据行！\n请检查表格：姓名列不能为空，且列名需为「姓名 / 部门 / 邮箱」。\n建议点击「下载标准导入模板」按模板填写。");
         }
 
-        // BUS No. 在云端为 text 列，允许单日或两日行程：单日 "3"、两日 "1/2"（也支持 "1 / 2"、"1|2" 等写法）
-        function parseBusNo(raw) {
-            const s = String(raw === null || raw === undefined ? '' : raw).trim();
-            return s === '' ? null : s;
-        }
-
         // 以邮箱作为查重依据（无邮箱的行直接导入），避免重复导入同一批人
         const existingEmails = new Set(users.map(u => String(u.email || '').trim().toLowerCase()).filter(Boolean));
         const rows = [];
         const skipped = [];
+        let noTripCount = 0;
 
         newUsersList.forEach(u => {
             const email = String(u.email || '').trim();
@@ -858,11 +1062,27 @@
             }
             if (email) existingEmails.add(email.toLowerCase());
 
+            // 四趟应乘标记：任一为真才算进入该趟名单；四趟全为 N 的人员不会出现在任何趟次
+            const t1 = !!u.trip1, t2 = !!u.trip2, t3 = !!u.trip3, t4 = !!u.trip4;
+            if (!t1 && !t2 && !t3 && !t4) noTripCount++;
+
             rows.push({
                 name: String(u.name || '').trim() || '未知姓名',
                 dept: String(u.dept || '').trim(),
                 email: email,
-                bus_no: parseBusNo(u.busNo),
+                bus_no: parseBusNo(u.busNo) || null,   // 两日同车，单值（1 / 2）
+                trip1: t1,
+                trip2: t2,
+                trip3: t3,
+                trip4: t4,
+                trip1_checked: false,
+                trip2_checked: false,
+                trip3_checked: false,
+                trip4_checked: false,
+                trip1_time: null,
+                trip2_time: null,
+                trip3_time: null,
+                trip4_time: null,
                 checked: false,
                 check_time: null
             });
@@ -882,51 +1102,116 @@
             if (error.code === '42501') {
                 hint = 'Supabase 行级安全策略 (RLS) 拒绝了写入。\n请到 Supabase Dashboard → SQL Editor 为 checkin_users 表添加 INSERT/UPDATE/DELETE 策略（允许 anon 角色）。';
             } else if (error.code === '42703') {
-                hint = `表缺少对应的列（${error.message}）。\n请检查 checkin_users 表结构是否包含：name、dept、email、bus_no、checked、check_time。`;
+                hint = `表缺少对应的列（${error.message}）。\n请在 Supabase SQL Editor 执行 checkin-app/supabase_fix.sql：需要 name、dept、email、bus_no、trip1、trip2、trip3、trip4、trip1_checked、trip2_checked、trip3_checked、trip4_checked、trip1_time、trip2_time、trip3_time、trip4_time、checked、check_time。`;
             } else {
-                hint = '请使用「下载标准导入模板」生成的表格填写（列：姓名、部门、BUS No.、邮箱）。BUS No. 支持单日（如 3）或两日行程（如 1/2）。';
+                hint = '请使用「下载标准导入模板」生成的表格填写（列：姓名、部门、BUS No.、第一趟、第二趟、第三趟、第四趟、邮箱）。\nBUS No. 为单值（1 / 2），四趟标记填 Y/N，留空视为 N。';
             }
             alert(`导入云端失败：${error.message}\n\n排查建议：\n${hint}`);
         } else {
             let tip = `✅ 成功导入 ${rows.length} 条记录到云端！`;
             if (skipped.length > 0) tip += `\n跳过 ${skipped.length} 条重复记录。`;
+            if (noTripCount > 0) {
+                tip += `\n\n⚠️ 其中 ${noTripCount} 条未勾选任何趟次（四趟标记均为空/N），这些人不会出现在任何趟次的乘车名单里。\n如需要他们乘车，请在表格中对应趟次列填 Y 后重新导入。`;
+            }
             alert(tip);
         }
     }
 
-    // ---------------- 6.5 BUS No. 解析与渲染辅助 ----------------
-    // BUS No. 现在是文本：单日 "3"、两日 "1/2"（也支持 "1 / 2"、"1|2"、逗号分隔等写法）
-    // 把任意格式拆成两日显示值
-    function parseBusDays(raw) {
-        const t = String(raw ?? '').trim();
-        if (!t) return { day1: '-', day2: '-', raw: '' };
-        const parts = t.split(/[\/\|,]/).map(s => s.trim()).filter(Boolean);
-        return {
-            day1: parts[0] || '-',
-            day2: parts[1] || parts[0] || '-',
-            raw: t
-        };
+    // ---------------- 6.5 BUS No. 与四趟乘况 解析/渲染辅助 ----------------
+    // BUS No. 现在是单值文本：两辆车（"1" / "2"），同一人员两天乘坐同一辆车，行程一致。
+    // 兼容历史写法（如 "1/2"）——取第一个值即可。
+    function parseBusNo(raw) {
+        const t = String(raw === null || raw === undefined ? '' : raw).trim();
+        if (!t) return '';
+        const parts = t.split(/[\/\|,\s]+/).map(s => s.trim()).filter(Boolean);
+        return parts[0] || '';
     }
-    // 单行紧凑：10.14: 1 · 10.15: 2  (HTML 票面、搜索提示用)
-    function formatBusInline(raw) {
-        const p = parseBusDays(raw);
-        if (!p.raw) return 'BUS: -';
-        return `10.14: ${p.day1}  ·  10.15: ${p.day2}`;
+
+    // —— 四趟：应乘（trip1..trip4）与实乘（tripN_checked / tripN_time）——
+    function isPlanned(u, no) { return !!u['trip' + no]; }
+    function isBoarded(u, no) { return !!u['trip' + no + 'Checked']; }
+    function tripTime(u, no) { return u['trip' + no + 'Time'] || null; }
+    function plannedTrips(u) { return TRIPS.filter(t => isPlanned(u, t.no)).map(t => t.no); }
+    function boardedTrips(u) { return TRIPS.filter(t => isBoarded(u, t.no)).map(t => t.no); }
+
+    // 导入用：表头识别「第一趟 / 第二趟 / 第三趟 / 第四趟」（兼容 trip1 / t1 / 第1趟 等写法）
+    function findTripCol(headers, no) {
+        const cn = ['一', '二', '三', '四'][no - 1];
+        const re = new RegExp(`第\\s*${cn}\\s*趟|第\\s*${no}\\s*趟|趟\\s*${no}|trip\\s*${no}|t\\s*${no}(?![0-9])`, 'i');
+        return headers.findIndex(h => re.test(h));
     }
-    // 双行（用于 PNG 大卡）：逐日独立展示，无中文
-    function formatBusTwoLines(raw) {
-        const p = parseBusDays(raw);
-        if (!p.raw) return { line1: 'BUS: -', line2: '' };
-        return {
-            line1: `Day 1: Bus No.${p.day1}`,
-            line2: `Day 2: Bus No.${p.day2}`
-        };
+    // 导入用：四趟标记解析 —— Y/N、是/否、1/0、TRUE/FALSE、✓/× 均可；留空或无法识别一律视为「不乘坐」，
+    // 避免误把人员塞进某趟名单（漏了可以在名单里「补录」，多了会误导负责人核对）
+    function parseTripFlag(v) {
+        if (v === null || v === undefined) return false;
+        const s = String(v).trim().toLowerCase();
+        if (s === '') return false;
+        if (['0', 'n', 'no', 'false', 'f', '否', '不', '无', '×', 'x', '—', '-'].includes(s)) return false;
+        if (['1', 'y', 'yes', 'true', 't', '是', '坐', '有', '✓', '√', 'v'].includes(s)) return true;
+        return false;
     }
-    // HTML 双行（表格单元格用，bold 两日）
-    function formatBusHtml(raw) {
-        const p = parseBusDays(raw);
-        if (!p.raw) return 'BUS: -';
-        return `10.14: <b>${p.day1}</b><br>10.15: <b>${p.day2}</b>`;
+
+    // 票面（小卡）用：应乘趟次中文名，如「第一趟 · 第二趟」
+    function plannedTripNames(u) {
+        const list = TRIPS.filter(t => isPlanned(u, t.no));
+        return list.length ? list.map(t => t.label).join(' · ') : '—';
+    }
+    // 票面（PNG 大卡）用：短标记，如 "T1 ✓   T2 ✓   T3 –"
+    function plannedTripMarks(u) {
+        return TRIPS.map(t => `${tripShort(t.no)} ${isPlanned(u, t.no) ? '✓' : '–'}`).join('   ');
+    }
+    function busBadge(raw) {
+        const b = parseBusNo(raw);
+        return b ? `<span class="bus-badge">🚌 ${b}</span>` : '<span class="text-xs text-slate-400">-</span>';
+    }
+    // 表格「四趟乘况」单元格：蓝=应乘未核验，绿=已核验，灰=不在该趟名单，橙=计划外补录
+    function tripChipsHtml(u) {
+        return '<div class="trip-chips">' + TRIPS.map(t => {
+            const planned = isPlanned(u, t.no);
+            const boarded = isBoarded(u, t.no);
+            let cls = 'trip-chip';
+            if (boarded && !planned) cls += ' extra';
+            else if (boarded) cls += ' done';
+            else if (planned) cls += ' on';
+            const mark = boarded ? '✓' : (planned ? '·' : '–');
+            const tip = `${tripTitle(t.no)}｜${planned ? '应乘' : '不在名单'}${boarded ? ' · 已核验 ' + fmtTime(tripTime(u, t.no)) : ' · 未核验'}`;
+            return `<span class="${cls}" title="${tip}">${tripShort(t.no)}${mark}</span>`;
+        }).join('') + '</div>';
+    }
+    // 表格「本趟状态」单元格（针对当前核验班次）
+    function tripStatusHtml(u, no) {
+        const planned = isPlanned(u, no);
+        const boarded = isBoarded(u, no);
+        if (boarded) {
+            const extra = planned ? '' : ' <span class="text-[10px] text-orange-600">补录</span>';
+            return `<span class="px-2 py-0.5 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">已核验 ${fmtTime(tripTime(u, no))}</span>${extra}`;
+        }
+        if (planned) {
+            return `<span class="px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-800 font-medium">待核验</span>`;
+        }
+        return `<span class="px-2 py-0.5 text-xs rounded bg-slate-100 text-slate-500 font-medium">不在本趟</span>`;
+    }
+
+    // —— 当前核验班次：扫码 / 手动输入 / 表格按钮都作用于该趟 ——
+    function renderCurrentTripBar() {
+        const el = document.getElementById('current-trip-label');
+        if (el) el.textContent = tripTitle(currentTrip);
+    }
+    function setCurrentTrip(no) {
+        const n = Number(no);
+        if (!TRIPS.some(t => t.no === n)) return;
+        currentTrip = n;
+        document.querySelectorAll('.chip-group[data-axis="trip"] .filter-chip').forEach(b => {
+            b.classList.toggle('active', Number(b.dataset.value) === n);
+        });
+        renderCurrentTripBar();
+        updateFilterModeBadge();
+        renderTable();
+        renderStats();
+    }
+    function nextTrip() {
+        const idx = TRIPS.findIndex(t => t.no === currentTrip);
+        setCurrentTrip(TRIPS[(idx + 1) % TRIPS.length].no);
     }
 
     function handleFileUpload(event) {
@@ -946,11 +1231,16 @@
                 const headers = jsonData[0].map(h => String(h || '').trim().toLowerCase());
                 let nameIdx = headers.findIndex(h => h.includes('姓名') || h.includes('name'));
                 let deptIdx = headers.findIndex(h => h.includes('部门') || h.includes('dept'));
-                let busIdx = headers.findIndex(h => h.includes('bus'));
+                let busIdx = headers.findIndex(h => h.includes('bus') || h.includes('巴士'));
                 let emailIdx = headers.findIndex(h => h.includes('邮箱') || h.includes('mail'));
+                const tripIdx = TRIPS.map(t => findTripCol(headers, t.no));
 
                 if (nameIdx === -1) {
-                    return alert(`未识别到「姓名」列！\n检测到的表头为：${headers.filter(Boolean).join(' / ') || '（空）'}\n\n请点击「下载标准导入模板」获取正确格式（列：姓名、部门、BUS No.、邮箱）。`);
+                    return alert(`未识别到「姓名」列！\n检测到的表头为：${headers.filter(Boolean).join(' / ') || '（空）'}\n\n请点击「下载标准导入模板」获取正确格式（列：姓名、部门、BUS No.、第一趟、第二趟、第三趟、第四趟、邮箱）。`);
+                }
+                if (tripIdx.every(i => i === -1)) {
+                    const go = confirm('未识别到任何「趟次」列（第一趟 / 第二趟 / 第三趟 / 第四趟）！\n\n这些人员不会出现在任何趟次的乘车名单中，之后只能在名单里逐个「补录」。\n\n推荐做法：点击「下载标准导入模板」，按 姓名 / 部门 / BUS No. / 第一趟 / 第二趟 / 第三趟 / 第四趟 / 邮箱 填写。\n\n仍要继续导入吗？');
+                    if (!go) return;
                 }
 
                 let pendingUsers = [];
@@ -962,9 +1252,13 @@
                     const dept = (deptIdx !== -1 && row[deptIdx]) ? String(row[deptIdx]).trim() : '';
                     const busNo = (busIdx !== -1 && row[busIdx] !== null && row[busIdx] !== undefined && String(row[busIdx]).trim() !== '') ? String(row[busIdx]).trim() : '';
                     const email = (emailIdx !== -1 && row[emailIdx]) ? String(row[emailIdx]).trim() : '';
+                    const trip1 = tripIdx[0] !== -1 ? parseTripFlag(row[tripIdx[0]]) : false;
+                    const trip2 = tripIdx[1] !== -1 ? parseTripFlag(row[tripIdx[1]]) : false;
+                    const trip3 = tripIdx[2] !== -1 ? parseTripFlag(row[tripIdx[2]]) : false;
+                    const trip4 = tripIdx[3] !== -1 ? parseTripFlag(row[tripIdx[3]]) : false;
 
                     if (name) {
-                        pendingUsers.push({ name, dept, busNo, email });
+                        pendingUsers.push({ name, dept, busNo, email, trip1, trip2, trip3, trip4 });
                     }
                 }
 
@@ -998,10 +1292,28 @@
                 const name = parts[0].trim();
                 const dept = parts[1] ? parts[1].trim() : '';
                 const busNo = parts[2] ? parts[2].trim() : '';
-                const email = parts[3] ? parts[3].trim() : '';
+                let trip1 = false, trip2 = false, trip3 = false, trip4 = false, email = '';
+
+                if (parts.length >= 8) {
+                    // 新格式：姓名,部门,BUS No.,第一趟,第二趟,第三趟,第四趟,邮箱
+                    trip1 = parseTripFlag(parts[3]);
+                    trip2 = parseTripFlag(parts[4]);
+                    trip3 = parseTripFlag(parts[5]);
+                    trip4 = parseTripFlag(parts[6]);
+                    email = parts[7] ? parts[7].trim() : '';
+                } else if (parts.length >= 5) {
+                    // 兼容旧三趟格式：姓名,部门,BUS No.,第一趟,第二趟,第三趟[,邮箱]
+                    trip1 = parseTripFlag(parts[3]);
+                    trip2 = parseTripFlag(parts[4]);
+                    trip3 = parseTripFlag(parts[5]);
+                    email = parts[6] ? parts[6].trim() : '';
+                } else {
+                    // 兼容旧格式：姓名,部门,BUS No.,邮箱（无趟次标记）
+                    email = parts[3] ? parts[3].trim() : '';
+                }
 
                 if (name) {
-                    pendingUsers.push({ name, dept, busNo, email });
+                    pendingUsers.push({ name, dept, busNo, email, trip1, trip2, trip3, trip4 });
                 }
             }
         });
@@ -1031,54 +1343,24 @@
         clearBusFilter();
     }
 
-    // ===== 巴士×日期 快速过滤 =====
-    // filterDay: 'all' | '1' | '2'
-    // filterBus: 'all' | '1' | '2' | '3'
-    let filterDay = 'all';
+    // ===== 趟次×巴士 快速过滤 =====
+    // currentTrip: 1 | 2 | 3 | 4 —— 当前核验班次（由看板卡片 / 趟次芯片 / 「切换下一趟」共同控制）
+    // filterBus:   'all' | '1' | '2'
     let filterBus = 'all';
 
-    // 根据 bus_no 文本（如 "1/2"、"3"、""）拆出 day1/day2；
-    // 用于把 bus_no 字段与选择器对齐做匹配
-    // 语义：选了「具体某天」时，bus 筛选只看那一天；选了「全部日子」时，bus 筛选看任何一天是否坐过
+    // 巴士号现在是单值（同一人员两天坐同一辆车），筛选即严格相等
     function busMatchesUser(u) {
-        // 全部+全部 视为不过滤
-        if (filterDay === 'all' && filterBus === 'all') return true;
-
-        const b = parseBusDays(u.busNo);
-        const hasDay1 = b.day1 && b.day1 !== '-';
-        const hasDay2 = b.day2 && b.day2 !== '-';
-
-        // 没有巴士信息的人在任何非默认筛选下都不显示
-        if (!hasDay1 && !hasDay2) return false;
-
-        // 日期维度：选具体某天时，要求那一天必须有数据
-        let dayOk = true;
-        if (filterDay === '1' && !hasDay1) dayOk = false;
-        if (filterDay === '2' && !hasDay2) dayOk = false;
-
-        // 巴士维度：选具体某天时，bus 必须与那一天的车号严格相等；
-        //           选「全部日子」时，任一天坐过选中巴士就算命中
-        let busOk = true;
-        if (filterBus !== 'all') {
-            if (filterDay === '1') {
-                busOk = (b.day1 === filterBus);
-            } else if (filterDay === '2') {
-                busOk = (b.day2 === filterBus);
-            } else {
-                busOk = (b.day1 === filterBus) || (b.day2 === filterBus);
-            }
-        }
-
-        return dayOk && busOk;
+        if (filterBus === 'all') return true;
+        return parseBusNo(u.busNo) === String(filterBus);
     }
 
     /**
-     * 顶部统计卡专用——仅按 chip(日期 + 巴士)过滤
-     * 不受搜索框 / 状态筛选 / 排序影响
-     * 语义:「我所负责的班次」应当有多少人、已签、未签
+     * 看板统计专用——仅按「巴士」芯片过滤
+     * 不受搜索框 / 本趟状态筛选 / 排序影响
+     * 语义:「我所负责的车辆」四趟各应乘多少人、已乘多少人、还差多少人
      */
     function getBusScopeUsers() {
-        if (filterDay === 'all' && filterBus === 'all') return users;
+        if (filterBus === 'all') return users;
         return users.filter(u => busMatchesUser(u));
     }
 
@@ -1096,37 +1378,36 @@
             if (kw.id    && !String(u.id).toLowerCase().includes(kw.id)) return false;
             if (kw.name  && !String(u.name  || '').toLowerCase().includes(kw.name)) return false;
             if (kw.dept  && !String(u.dept  || '').toLowerCase().includes(kw.dept)) return false;
-            if (kw.bus   && !(u.busNo !== null && u.busNo !== undefined && String(u.busNo).toLowerCase().includes(kw.bus))) return false;
+            if (kw.bus   && !String(u.busNo || '').toLowerCase().includes(kw.bus)) return false;
             if (kw.email && !String(u.email || '').toLowerCase().includes(kw.email)) return false;
-            if (statusFilter === 'checked'   && !u.checked) return false;
-            if (statusFilter === 'unchecked' &&  u.checked) return false;
+            // 「本趟状态」均针对当前核验班次
+            if (statusFilter === 'on'      && !isPlanned(u, currentTrip)) return false;
+            if (statusFilter === 'boarded' && !isBoarded(u, currentTrip)) return false;
+            if (statusFilter === 'pending' && !(isPlanned(u, currentTrip) && !isBoarded(u, currentTrip))) return false;
             if (!busMatchesUser(u)) return false;
             return true;
         });
     }
 
-    // 顶部徽章：把当前筛选条件可视化，免得忘了当前在看哪班
+    // 徽章：始终显示「当前核验班次 + 车辆筛选」，免得忘了正在看哪一班、哪辆车
     function updateFilterModeBadge() {
         const badge = document.getElementById('filter-mode-badge');
         const txt = document.getElementById('filter-mode-text');
         if (!badge || !txt) return;
-        const hasFilter = filterDay !== 'all' || filterBus !== 'all';
-        if (!hasFilter) {
-            badge.classList.add('hidden');
-            return;
-        }
-        const dayText = filterDay === 'all' ? '全部日子' : (filterDay === '1' ? 'Day 1 (10.14)' : 'Day 2 (10.15)');
-        const busText = filterBus === 'all' ? '全部巴士' : `Bus ${filterBus}`;
-        txt.textContent = `${dayText} · ${busText}`;
+        const busText = filterBus === 'all' ? '全部车辆' : `Bus ${filterBus}`;
+        txt.textContent = `${tripShort(currentTrip)} ${tripDef(currentTrip).label} · ${busText}`;
         badge.classList.remove('hidden');
     }
 
-    // 单选切换某轴的筛选值
+    // 单选切换某轴的筛选值（trip 轴 = 切换当前核验班次）
     function selectBusFilter(axis, value) {
-        if (axis === 'day') filterDay = value;
-        else if (axis === 'bus') filterBus = value;
-        else return;
-        document.querySelectorAll(`.chip-group[data-axis="${axis}"] .filter-chip`).forEach(b => {
+        if (axis === 'trip') {
+            setCurrentTrip(value);
+            return;
+        }
+        if (axis !== 'bus') return;
+        filterBus = value;
+        document.querySelectorAll('.chip-group[data-axis="bus"] .filter-chip').forEach(b => {
             b.classList.toggle('active', b.dataset.value === value);
         });
         updateFilterModeBadge();
@@ -1134,10 +1415,10 @@
         renderStats();
     }
 
+    // 重置车辆筛选（当前核验班次保持不变，避免现场误切趟次）
     function clearBusFilter() {
-        filterDay = 'all';
         filterBus = 'all';
-        document.querySelectorAll('.chip-group .filter-chip').forEach(b => {
+        document.querySelectorAll('.chip-group[data-axis="bus"] .filter-chip').forEach(b => {
             b.classList.toggle('active', b.dataset.value === 'all');
         });
         updateFilterModeBadge();
@@ -1164,9 +1445,11 @@
         const sortOrder = document.getElementById('sort-order')?.value || 'time';
         let filteredUsers = getFilteredUsers();
 
-        // 排序：默认按签到时间倒序（最新扫码在最上面，方便核对）；未签到人员固定排在最后
+        // 排序：默认按「当前核验班次」的核验时间倒序（最新扫码在最上面，方便核对）；
+        // 未核验人员固定排在最后（降序时 0 时间排末位，升序时排最前）
         const ts = u => {
-            const t = u.checkTime ? new Date(u.checkTime).getTime() : NaN;
+            const raw = tripTime(u, currentTrip) || u.checkTime;
+            const t = raw ? new Date(raw).getTime() : NaN;
             return isNaN(t) ? 0 : t;
         };
         if (sortOrder === 'time') {
@@ -1187,28 +1470,28 @@
 
         const fragment = document.createDocumentFragment();
         filteredUsers.forEach(item => {
+            const boarded = isBoarded(item, currentTrip);
+            const planned = isPlanned(item, currentTrip);
+            const btnLabel = boarded ? '撤销本趟' : (planned ? '核验本趟' : '补录本趟');
+            const btnCls = boarded
+                ? 'border-slate-200 text-slate-500 hover:bg-slate-100'
+                : (planned
+                    ? 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 shadow-sm'
+                    : 'bg-orange-500 text-white border-orange-500 hover:bg-orange-600 shadow-sm');
+
             const tr = document.createElement('tr');
             tr.className = "hover:bg-slate-50 transition";
             tr.innerHTML = `
                 <td class="p-3 font-mono text-xs font-semibold text-slate-600">${item.id}</td>
                 <td class="p-3 font-medium text-slate-800">${item.name}</td>
                 <td class="p-3 text-xs text-slate-600">${item.dept || '-'}</td>
-                <td class="p-3 font-mono text-xs text-slate-600 leading-tight">${formatBusHtml(item.busNo)}</td>
+                <td class="p-3">${busBadge(item.busNo)}</td>
+                <td class="p-3">${tripChipsHtml(item)}</td>
+                <td class="p-3">${tripStatusHtml(item, currentTrip)}</td>
                 <td class="p-3 font-mono text-xs text-slate-500">${item.email || '-'}</td>
-                <td class="p-3">
-                    ${item.checked
-                        ? `<span class="px-2 py-0.5 text-xs rounded bg-emerald-100 text-emerald-800 font-medium">已签到</span>`
-                        : `<span class="px-2 py-0.5 text-xs rounded bg-slate-100 text-slate-500 font-medium">未签到</span>`
-                    }
-                </td>
-                <td class="p-3 text-xs font-mono text-slate-500">${fmtTime(item.checkTime)}</td>
                 <td class="p-3 text-right">
-                    <button onclick="toggleCheckinById(${item.id})" class="px-2.5 py-1 text-xs rounded font-medium border transition ${
-                        item.checked
-                        ? 'border-slate-200 text-slate-500 hover:bg-slate-100'
-                        : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 shadow-sm'
-                    }">
-                        ${item.checked ? '撤销' : '签到'}
+                    <button onclick="toggleTripCheckinById(${item.id})" class="px-2.5 py-1 text-xs rounded font-medium border transition ${btnCls}">
+                        ${btnLabel}
                     </button>
                 </td>
             `;
@@ -1217,28 +1500,41 @@
         tbody.appendChild(fragment);
     }
 
+    // 四趟乘况看板：每趟一张卡片（应乘 / 已乘 / 未乘 + 进度条），点击卡片即切换「当前核验班次」
+    // 统计范围只跟随「巴士」芯片，与搜索框 / 本趟状态筛选 / 排序完全独立
     function renderStats() {
-        // 顶部统计严格按 chip 联动——让负责人一眼看到自己班次的进度,
-        // 与搜索框 / 状态筛选 / 排序完全独立,避免时序混乱
-        const list = getBusScopeUsers();
-        const total = list.length;
-        const checked = list.filter(u => u.checked).length;
-        if (document.getElementById('stat-total'))     document.getElementById('stat-total').innerText     = total;
-        if (document.getElementById('stat-checked'))   document.getElementById('stat-checked').innerText   = checked;
-        if (document.getElementById('stat-unchecked')) document.getElementById('stat-unchecked').innerText = Math.max(0, total - checked);
+        const box = document.getElementById('trip-board');
+        if (!box) return;
 
-        // 副标题:直观告诉用户当前统计针对哪个范围
-        const scopeText = (filterDay === 'all' && filterBus === 'all')
-            ? '全部人'
-            : (() => {
-                const d = filterDay === 'all' ? 'Day 1+2' : (filterDay === '1' ? 'Day 1' : 'Day 2');
-                const b = filterBus === 'all' ? '全部巴士' : `Bus ${filterBus}`;
-                return `${d} · ${b}`;
-            })();
-        ['stat-scope', 'stat-scope-checked', 'stat-scope-unchecked'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = scopeText;
-        });
+        const list = getBusScopeUsers();
+        const scopeEl = document.getElementById('board-scope');
+        if (scopeEl) {
+            scopeEl.textContent = filterBus === 'all'
+                ? `全部人员 · 名单共 ${users.length} 人`
+                : `Bus ${filterBus} · 名单 ${users.length} 人 / 本车 ${list.length} 人`;
+        }
+
+        box.innerHTML = TRIPS.map(t => {
+            const c = tripCounts(list, t.no);
+            const pct = c.planned
+                ? Math.round(Math.min(1, c.boarded / c.planned) * 100)
+                : (c.boarded ? 100 : 0);
+            const active = currentTrip === t.no;
+            return `
+                <button type="button" class="trip-card${active ? ' active' : ''}" onclick="setCurrentTrip(${t.no})" title="点击切换为当前核验班次">
+                    ${active ? '<span class="trip-tag">当前班次</span>' : ''}
+                    <div class="tc-title">${t.label}</div>
+                    <div class="tc-sub">${t.day}　${t.route}</div>
+                    <div class="tc-nums">
+                        应乘 <b>${c.planned}</b>
+                        <span class="ok">· 已乘 <b>${c.boarded}</b></span>
+                        <span class="pend">· 未乘 <b>${c.pending}</b></span>
+                        ${c.extra ? `<span class="extra">· 补录 <b>${c.extra}</b></span>` : ''}
+                    </div>
+                    <div class="trip-bar"><i style="width:${pct}%"></i></div>
+                </button>
+            `;
+        }).join('');
 
         updateFilterModeBadge();
     }
@@ -1261,11 +1557,12 @@
                 <div class="text-center w-full">
                     <p class="font-bold text-slate-800 text-sm truncate">${u.name}</p>
                     <p class="text-xs text-slate-500 truncate">${u.dept || '-'}</p>
-                    <p class="text-[11px] text-blue-700 font-semibold font-mono truncate">${formatBusInline(u.busNo)}</p>
+                    <p class="text-[11px] text-blue-700 font-semibold font-mono truncate">BUS No. ${parseBusNo(u.busNo) || '-'}</p>
+                    <p class="text-[10px] text-slate-500 truncate" title="应乘趟次">🚌 ${plannedTripNames(u)}</p>
                 </div>
                 <div id="${qrId}" class="p-1.5 bg-white border border-slate-200 rounded shadow-inner"></div>
                 <div class="flex items-center gap-2">
-                    <p class="text-[10px] text-slate-400 font-mono">编号: ${u.id}</p>
+                    <p class="text-[10px] text-slate-400 font-mono">ID: ${u.id}</p>
                     <button onclick="downloadSingleQr(${u.id})" class="text-[10px] text-blue-600 hover:underline font-medium">⬇ 下载本卡</button>
                 </div>
             `;
@@ -1352,7 +1649,7 @@
         });
     }
 
-    // 生成单人二维码卡片 PNG（姓名 / 部门 / BUS No. + 大尺寸二维码 + 编号）
+    // 生成单人二维码卡片 PNG（姓名 + 大尺寸二维码 + ID / BUS No.）
     async function makeCardPng(u) {
         await ensureQRCodeLib();
         const W = 420, H = 560, QR_SIZE = 320;
@@ -1374,17 +1671,16 @@
         const qr = await makeQrCanvas(u.id, QR_SIZE);
         ctx.drawImage(qr, (W - QR_SIZE) / 2, 110, QR_SIZE, QR_SIZE);
 
-        // 编号
+        // ID
         ctx.fillStyle = '#0f172a';
         ctx.font = 'bold 26px monospace';
-        ctx.fillText('编号: ' + u.id, W / 2, 478);
+        ctx.fillText('ID: ' + u.id, W / 2, 478);
 
-        // BUS No. — 两日行程 10.14 / 10.15（仅英文，无中文）
-        const bus = formatBusTwoLines(u.busNo);
+        // BUS No.（同一人员两天坐同一辆车，单值）
+        const busNo = parseBusNo(u.busNo);
         ctx.fillStyle = '#047857';
         ctx.font = 'bold 22px "Microsoft YaHei", sans-serif';
-        ctx.fillText(bus.line1, W / 2, 506);
-        ctx.fillText(bus.line2, W / 2, 538);
+        ctx.fillText(`BUS No. ${busNo || '-'}`, W / 2, 506);
 
         return new Promise(resolve => c.toBlob(resolve, 'image/png'));
     }
@@ -1460,39 +1756,74 @@
 
     // ---------------- 8. 清空与重置 ----------------
     async function resetData() {
-        if (confirm("是否重置所有人的签到状态？")) {
-            // 用 id > 0 过滤全表（PostgREST 接受的合法 WHERE），简洁可靠
-            const { error } = await supabaseClient
-                .from('checkin_users')
-                .update({ checked: false, check_time: null })
-                .gt('id', 0);
+        if (!confirm("是否重置所有人的签到状态（含四趟核验记录）？")) return;
 
-            if (error) alert('重置失败: ' + error.message);
+        // 用 id > 0 过滤全表（PostgREST 要求显式 WHERE，无 WHERE 的 PATCH 会被 Supabase 拒绝）
+        // .select('id') 让响应带回「真正被改动的行」：RLS 缺 UPDATE 策略时 PostgREST 会静默返回
+        // 0 行而 error 仍为 null，只凭 error 判断会把「被拒绝」误报成「已重置」
+        const { data: updated, error } = await supabaseClient
+            .from('checkin_users')
+            .update({
+                checked: false, check_time: null,
+                trip1_checked: false, trip2_checked: false, trip3_checked: false, trip4_checked: false,
+                trip1_time: null, trip2_time: null, trip3_time: null, trip4_time: null
+            })
+            .gt('id', 0)
+            .select('id');
+
+        if (error) {
+            alert('重置失败: ' + error.message +
+                (error.code === '42501' ? '\n\nSupabase 行级安全策略 (RLS) 拒绝了写入。\n请到 Supabase SQL Editor 执行 checkin-app/supabase_fix.sql 的【第二步】。' : ''));
+            return;
+        }
+
+        await loadDataFromCloud();   // 刷新页面，否则列表仍显示旧状态
+
+        if (!updated || updated.length === 0) {
+            alert('没有可重置的记录。\n\n可能是云端名单已经为空，或 checkin_users 表缺少 UPDATE 策略（此时 PostgREST 会「静默成功」但不改动任何行）。\n请到 Supabase SQL Editor 执行 checkin-app/supabase_fix.sql 的【第二步】后重试。');
+        } else {
+            alert(`✅ 已重置 ${updated.length} 人的签到状态。`);
         }
     }
 
     async function clearAllUsers() {
-        if (!confirm("确定要清空整张云端人员名单并把编号重置为从 1 开始吗？\n\n此操作无法撤销：所有人员记录、自增编号、二维码都将被清空。")) return;
+        const total = users.length;
+        if (!confirm(`确定要清空整张云端人员名单并把编号重置为从 1 开始吗？\n\n当前云端共 ${total} 人，全部记录、自增编号与二维码都将失效，此操作无法撤销。`)) return;
 
-        // 通过 RPC 一键清空 + 重置自增序列（需先在 Supabase 执行 supabase_fix.sql 创建该函数）
-        const { error } = await supabaseClient.rpc('reset_checkin_sequence');
+        // 第一步：真正执行删除。
+        // 注意顺序——先走表上的 DELETE，再调用 RPC 只做「重置序列」：
+        // 这样即使 reset_checkin_sequence 还没修好（旧版本的无 WHERE 删除会被 Supabase 的
+        // safeupdate 保护拒绝，报 21000），「清空名单」这个核心动作依然能成功。
+        // .select('id') 带回真正被删掉的行：缺少 DELETE 策略时 PostgREST 会静默返回 0 行，
+        // 仅凭 error === null 会把「被拒绝」误报成「已清空」。
+        const { data: deleted, error: delErr } = await supabaseClient
+            .from('checkin_users')
+            .delete()
+            .gt('id', 0)
+            .select('id');
 
-        if (error) {
-            // 兜底：若函数尚未创建（42883/PGRST202），回退到 id > 0 的 DELETE 并提示
-            if (error.code === '42883' || error.code === 'PGRST202' || /function.*not.*exist/i.test(error.message || '')) {
-                const { error: delErr } = await supabaseClient
-                    .from('checkin_users')
-                    .delete()
-                    .gt('id', 0);
+        if (delErr) {
+            alert('清空失败：' + delErr.message +
+                (delErr.code === '42501' ? '\n\nSupabase 行级安全策略 (RLS) 拒绝了删除。\n请到 Supabase SQL Editor 执行 checkin-app/supabase_fix.sql 的【第二步】。' : ''));
+            return;
+        }
 
-                if (delErr) {
-                    alert('清空失败：' + delErr.message + '\n\n请检查 checkin_users 表的 RLS 策略是否允许 DELETE 匿名访问。');
-                } else {
-                    alert('名单已清空，但编号未重置（因为 reset_checkin_sequence 函数尚未创建）。\n\n📌 要让编号从 1 重新开始，请：\n1. 打开 Supabase → SQL Editor\n2. 执行 checkin-app/supabase_fix.sql 文件末尾的 reset_checkin_sequence 函数\n3. 下次「清空名单」即可自动重置编号');
-                }
-            } else {
-                alert('清空失败：' + error.message);
-            }
+        if (!deleted || deleted.length === 0) {
+            alert('未能删除任何人员：云端名单可能已经是空的，或 checkin_users 表缺少 DELETE 策略（此时 PostgREST 会「静默成功」但不删任何行）。\n\n请到 Supabase SQL Editor 执行 checkin-app/supabase_fix.sql 的【第二步】后重试。');
+            return;
+        }
+
+        // 第二步：重置自增序列（可选增强——失败不影响「已清空」这个结果）
+        const { error: seqErr } = await supabaseClient.rpc('reset_checkin_sequence');
+
+        await loadDataFromCloud();   // 先刷新页面，再弹提示，关闭提示时界面已同步
+
+        if (!seqErr) {
+            alert(`✅ 已清空 ${deleted.length} 人，编号已重置为从 1 开始。`);
+        } else if (seqErr.code === '21000' || /requires a WHERE clause/i.test(seqErr.message || '')) {
+            alert(`✅ 已清空 ${deleted.length} 人。\n\n⚠️ 编号未重置：Supabase 的 safeupdate 保护拒绝了 reset_checkin_sequence() 里那句没有 WHERE 的 DELETE（错误 21000）。\n\n📌 要让编号从 1 重新开始，请：\n1. 打开 Supabase → SQL Editor\n2. 重新执行 checkin-app/supabase_fix.sql 里已修正的 reset_checkin_sequence 函数（改为 DELETE ... WHERE id IS NOT NULL）\n3. 之后再点「清空名单」即可自动重置编号`);
+        } else {
+            alert(`✅ 已清空 ${deleted.length} 人。\n\n⚠️ 编号未重置：${seqErr.message}\n\n📌 若提示函数不存在（PGRST202），请到 Supabase SQL Editor 执行 checkin-app/supabase_fix.sql 里创建 reset_checkin_sequence 的那一段。`);
         }
     }
 
@@ -1501,23 +1832,29 @@
         const list = getFilteredUsers();
         if (list.length === 0) return alert("当前筛选下无数据可导出");
 
-        let csv = "编号,姓名,部门,Day 1 巴士 (10.14),Day 2 巴士 (10.15),邮箱,签到状态,签到时间\n";
+        // 表头由 TRIPS 自动生成（基础列 + 每趟「应乘 / 已乘 / 核验时间」+ 邮箱），增删趟次无需改这里
+        const head = ['编号', '姓名', '部门', 'BUS No.'];
+        TRIPS.forEach(t => head.push(`${t.label}应乘(${t.day} ${t.route})`, `${t.label}已乘`, `${t.label}核验时间`));
+        head.push('邮箱');
+        let csv = head.join(',') + '\n';
         // UTF-8 BOM 保证 Excel 在中文 Windows 下能正确识别编码
         csv = "\uFEFF" + csv;
         list.forEach(u => {
-            const b = parseBusDays(u.busNo);
-            csv += `"${u.id}","${u.name}","${u.dept || '-'}","${b.day1}","${b.day2}","${u.email || '-'}","${u.checked ? '已签到' : '未签到'}","${fmtTime(u.checkTime)}"\n`;
+            // 每行：基础信息 + 每趟（应乘 / 已乘 / 核验时间）；Y/N 便于 Excel 里筛选统计
+            const YN = b => (b ? 'Y' : 'N');
+            const cells = [u.id, u.name, u.dept || '-', parseBusNo(u.busNo) || '-'];
+            TRIPS.forEach(t => {
+                const boarded = isBoarded(u, t.no);
+                cells.push(YN(isPlanned(u, t.no)), YN(boarded), boarded ? fmtTime(tripTime(u, t.no)) : '-');
+            });
+            cells.push(u.email || '-');
+            csv += cells.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',') + '\n';
         });
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
-        // 文件名带上筛选条件，便于巴士同事归档
-        let suffix = '';
-        if (filterDay !== 'all' || filterBus !== 'all') {
-            const d = filterDay === 'all' ? 'X' : filterDay;
-            const b = filterBus === 'all' ? 'X' : filterBus;
-            suffix = `_D${d}_Bus${b}`;
-        }
+        // 文件名带上当前班次与筛选条件，便于巴士同事归档
+        const suffix = `_${tripShort(currentTrip)}${filterBus === 'all' ? '' : '_Bus' + filterBus}`;
         link.setAttribute("download", `签到结果导出${suffix}_${nowIso().slice(0,10)}.csv`);
         document.body.appendChild(link);
         link.click();
