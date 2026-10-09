@@ -88,6 +88,49 @@
             100% { transform: scale(1); }
         }
 
+        /* ===== 非阻塞确认弹窗（替代原生 confirm，避免原生弹窗冻结摄像头画面） ===== */
+        #confirm-backdrop {
+            position: fixed; inset: 0;
+            background: rgba(15, 23, 42, 0.55);
+            -webkit-backdrop-filter: blur(4px);
+            backdrop-filter: blur(4px);
+            z-index: 10000;
+            display: flex; align-items: center; justify-content: center;
+            padding: 1rem;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.25s ease;
+        }
+        #confirm-backdrop.show { opacity: 1; pointer-events: auto; }
+        #confirm-card {
+            background: #ffffff;
+            border-radius: 1.25rem;
+            padding: 1.75rem 1.5rem 1.25rem;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45);
+            width: 100%; max-width: 460px;
+            border-top: 6px solid #f59e0b;
+        }
+        #confirm-card .confirm-title {
+            font-size: 1.15rem; font-weight: 700; color: #b45309;
+            margin-bottom: 0.6rem; line-height: 1.4;
+        }
+        #confirm-card .confirm-body {
+            color: #475569; font-size: 0.9rem; line-height: 1.6;
+            margin-bottom: 1rem; white-space: pre-line;
+        }
+        #confirm-card .confirm-actions { display: flex; gap: 0.75rem; justify-content: center; }
+        #confirm-card .confirm-actions button {
+            padding: 0.55rem 1.5rem; border-radius: 0.75rem;
+            font-weight: 600; cursor: pointer; border: none; font-size: 0.9rem;
+        }
+        #confirm-cancel { background: #f1f5f9; color: #475569; }
+        #confirm-cancel:hover { background: #e2e8f0; }
+        #confirm-ok { background: #f59e0b; color: #ffffff; }
+        #confirm-ok:hover { background: #d97706; }
+        #confirm-card .confirm-hint {
+            color: #94a3b8; font-size: 0.72rem; margin-top: 0.75rem;
+        }
+
         /* ===== 实时扫码小记 ===== */
         .scan-log {
             margin-top: 0.75rem;
@@ -220,6 +263,19 @@
             <div id="toast-sub" class="toast-sub"></div>
             <div id="toast-hint" class="toast-hint">点击「确定」继续 (Esc 关闭)</div>
             <button class="toast-close" onclick="hideToast()">确定</button>
+        </div>
+    </div>
+
+    <!-- ===== 非阻塞确认弹窗（临时补录确认，替代原生 confirm） ===== -->
+    <div id="confirm-backdrop" role="dialog" aria-modal="true">
+        <div id="confirm-card">
+            <div id="confirm-title" class="confirm-title"></div>
+            <div id="confirm-body" class="confirm-body"></div>
+            <div class="confirm-actions">
+                <button id="confirm-cancel" type="button">取消</button>
+                <button id="confirm-ok" type="button">补录核验</button>
+            </div>
+            <div class="confirm-hint">10 秒内未确认将自动取消</div>
         </div>
     </div>
 
@@ -653,6 +709,49 @@
         if (e.key === 'Escape') hideToast();
     });
 
+    // 非阻塞确认弹窗：Promise 形式的 confirm()。
+    // 为什么不用原生 confirm()：原生弹窗会阻塞 JS 主线程，iOS Safari/部分安卓浏览器在
+    // 摄像头取流期间弹出原生对话框会导致 <video> 画面冻结，扫码从此失效，只能重开摄像头。
+    // 此弹窗不阻塞主线程，弹窗期间的解码回调由 onScan 的 _scanBusy 防重入统一丢弃。
+    let _confirmCleanup = null;
+    function showConfirmDialog(title, body, okText, cancelText, timeoutMs) {
+        return new Promise((resolve) => {
+            const bd = document.getElementById('confirm-backdrop');
+            const titleEl = document.getElementById('confirm-title');
+            const bodyEl = document.getElementById('confirm-body');
+            const okBtn = document.getElementById('confirm-ok');
+            const cancelBtn = document.getElementById('confirm-cancel');
+            if (!bd || !okBtn || !cancelBtn) { resolve(false); return; }
+
+            titleEl.textContent = title || '';
+            bodyEl.textContent = body || '';
+            okBtn.textContent = okText || '确定';
+            cancelBtn.textContent = cancelText || '取消';
+
+            if (_confirmCleanup) _confirmCleanup(); // 上一个弹窗还开着时先安全收尾
+
+            let done = false;
+            const finish = (val) => {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                bd.classList.remove('show');
+                okBtn.onclick = null;
+                cancelBtn.onclick = null;
+                _confirmCleanup = null;
+                resolve(val);
+            };
+            const timer = setTimeout(() => finish(false), timeoutMs || 10000);
+            okBtn.onclick = () => finish(true);
+            cancelBtn.onclick = () => finish(false);
+
+            _confirmCleanup = () => finish(false);
+            bd.classList.remove('show');
+            void bd.offsetWidth; // 重置过渡动画
+            bd.classList.add('show');
+        });
+    }
+
     // 扫码小记：保留最近 6 条，按时间倒序在上
     function appendScanLog(type, name, extra) {
         const box = document.getElementById('scan-log');
@@ -775,9 +874,14 @@
 
         } else {
             // 不在本趟名单的人员允许现场补录（临时调换是常态），但需负责人二次确认
+            // 注意：这里用非阻塞自定义弹窗而不是原生 confirm()——原生弹窗会让
+            // iOS Safari 等浏览器的摄像头画面冻结，导致后续扫码失效（需重开摄像头）
             const planned = isPlanned(user, trip);
             if (!planned) {
-                const ok = confirm(`${user.name}（${user.dept || '无部门信息'}）不在【${tTitle}】的乘车名单中。\n\n是否按「临时补录」为其核验本趟乘车？`);
+                const ok = await showConfirmDialog(
+                    `${user.name} 不在本趟乘车名单`,
+                    `${user.dept || '无部门信息'} · 编号 #${user.id}\n${tTitle}\n\n是否按「临时补录」为其核验本趟乘车？`,
+                    '补录核验', '取消', 10000);
                 if (!ok) {
                     playBeep('warning');
                     if (resultBox) {
@@ -803,13 +907,26 @@
                 ['trip' + trip + '_time']: now
             };
 
-            const { error } = await supabaseClient
-                .from('checkin_users')
-                .update(payload)
-                .eq('id', user.id);
+            // 云端写入加 12 秒超时：现场移动网络不佳时请求可能长期挂起，
+            // 期间 _scanBusy 一直为 true，扫码看起来就像"锁死"了
+            let error = null;
+            let writeTimer = null;
+            try {
+                ({ error } = await Promise.race([
+                    supabaseClient.from('checkin_users').update(payload).eq('id', user.id),
+                    new Promise((_, reject) => {
+                        writeTimer = setTimeout(
+                            () => reject(new Error('云端写入超时（12 秒无响应），请检查网络后重扫')),
+                            12000);
+                    })
+                ]));
+            } catch (e) {
+                error = { message: (e && e.message) ? e.message : String(e) };
+            } finally {
+                clearTimeout(writeTimer);
+            }
 
             if (error) {
-                alert('核验失败：' + error.message);
                 showToast('error', '核验失败', error.message);
                 appendScanLog('error', user.name, '云端写入失败');
                 if (resultBox) setTimeout(() => { resultBox.classList.add('hidden'); }, 4000);
@@ -924,9 +1041,9 @@
     const SCAN_DEDUPE_MS = 2500;
     let _scanDedupText = '';
     let _scanDedupAt = 0;
-    // 核验流程（含 confirm 确认弹窗、云端写入）执行期间置位：期间到达的解码回调一律丢弃。
-    // 原因：confirm() 会阻塞 JS，弹窗打开期间 html5-qrcode 的解码回调只能排队，
-    // 弹窗一关才集中触发——不挡的话会立刻再弹一轮提示/确认框，看起来就是"重复多次跳出提示"。
+    // 核验流程（含补录确认弹窗、云端写入）执行期间置位：期间到达的解码回调一律丢弃。
+    // 不挡的话：同一张码还在镜头前时，弹窗一关就会立刻再弹一轮提示/确认框，
+    // 看起来就是"重复多次跳出提示"。
     let _scanBusy = false;
     function dedupeScan(text) {
         const now = Date.now();
@@ -962,72 +1079,100 @@
         throw new Error('扫码组件加载失败，请检查手机网络后刷新页面重试');
     }
 
-    async function toggleScanner() {
+    // 「摄像头未开启」占位提示：html5-qrcode 启动时会清空 #reader 的内容，
+    // 占位 span 会被一并移除，需要时重建，保证关摄像头后提示能再次出现
+    function ensureReaderPlaceholder() {
+        let el = document.getElementById('reader-placeholder');
+        if (!el) {
+            el = document.createElement('span');
+            el.id = 'reader-placeholder';
+            el.textContent = '摄像头未开启';
+            const reader = document.getElementById('reader');
+            if (reader) reader.appendChild(el);
+        }
+        el.style.display = 'block';
+        return el;
+    }
+
+    // 开启摄像头（从 toggleScanner 中抽出，供手动开启与看门狗自动恢复共用）
+    async function startScannerAsync() {
         const btn = document.getElementById('btn-toggle-cam');
         const placeholder = document.getElementById('reader-placeholder');
 
+        // 1) 微信/QQ 内置浏览器不支持摄像头 API，必须用系统浏览器打开
+        const ua = navigator.userAgent.toLowerCase();
+        if (/micromessenger|mobile.*qq\//.test(ua)) {
+            alert('当前在微信/QQ内置浏览器中，无法调用摄像头。\n\n请点击右上角「···」→ 选择「在浏览器中打开」（iPhone 选「在Safari中打开」），然后再点开启摄像头。');
+            return;
+        }
+
+        // 2) 环境检查：必须 HTTPS + 支持 getUserMedia
+        if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error("当前浏览器环境不支持摄像头（页面必须通过 HTTPS 访问，请使用系统自带浏览器）");
+        }
+
+        // 3) 确保扫码库已加载（不在页面加载时占用摄像头权限，避免 iOS 重复申请卡死）
+        await ensureHtml5Qrcode();
+
+        if (placeholder) placeholder.style.display = "none";
+
+        html5QrcodeScanner = new Html5Qrcode("reader");
+        const cfg = { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 };
+        const onScan = (text) => {
+            // 同一 QR 在画面停留期间 html5-qrcode 会反复回调，这里"滑动去重 + 防重入"
+            // 双保险，避免结果弹窗还开着 / 确认框刚关时同一张码又触发一轮核验提示
+            if (_scanBusy) return;         // 上一轮核验（含确认弹窗、云端写入）还没结束
+            if (!dedupeScan(text)) return; // 同一张码持续在镜头前：滑动窗口去重
+            _scanBusy = true;
+            Promise.resolve(processCheckin(text))
+                .catch(() => { /* 错误分支已在 processCheckin 内提示 */ })
+                .finally(() => {
+                    _scanBusy = false;
+                    // 以核验结束时刻刷新去重时间戳：吞掉弹窗期间积压、
+                    // 刚刚才集中送达的同一码回调
+                    _scanDedupAt = Date.now();
+                });
+        };
+
+        // 4) 优先后置摄像头；个别机型不支持 facingMode 时，回退为枚举设备ID
+        try {
+            await html5QrcodeScanner.start({ facingMode: "environment" }, cfg, onScan, () => {});
+        } catch (e1) {
+            const devices = await Html5Qrcode.getCameras();
+            if (!devices || devices.length === 0) throw e1;
+            await html5QrcodeScanner.start(devices[devices.length - 1].id, cfg, onScan, () => {});
+        }
+
+        isScannerRunning = true;
+        btn.innerText = "关闭摄像头";
+        btn.className = "flex-1 bg-rose-600 text-white py-2 rounded-lg font-medium hover:bg-rose-700 transition text-sm";
+
+        // 5) 启动取景画面看门狗（见下方说明）
+        startWatchdog();
+    }
+
+    async function toggleScanner() {
+        const btn = document.getElementById('btn-toggle-cam');
+
         if (isScannerRunning) {
+            stopWatchdog();
             if (html5QrcodeScanner) {
-                await html5QrcodeScanner.stop();
+                try { await html5QrcodeScanner.stop(); } catch (e) { /* 已断开则忽略 */ }
                 html5QrcodeScanner = null;
             }
             resetScanDedup();
+            // 无论上一轮核验流程（云端写入 / 确认弹窗）处于什么状态，
+            // 关闭摄像头时强制解除防重入锁，避免残留的 _scanBusy 把下一次扫码"锁死"
+            _scanBusy = false;
             isScannerRunning = false;
             btn.innerText = "开启摄像头";
             btn.className = "flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition text-sm";
-            if (placeholder) placeholder.style.display = "block";
+            ensureReaderPlaceholder();
             return;
         }
 
         try {
-            // 1) 微信/QQ 内置浏览器不支持摄像头 API，必须用系统浏览器打开
-            const ua = navigator.userAgent.toLowerCase();
-            if (/micromessenger|mobile.*qq\//.test(ua)) {
-                alert('当前在微信/QQ内置浏览器中，无法调用摄像头。\n\n请点击右上角「···」→ 选择「在浏览器中打开」（iPhone 选「在Safari中打开」），然后再点开启摄像头。');
-                return;
-            }
-
-            // 2) 环境检查：必须 HTTPS + 支持 getUserMedia
-            if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                throw new Error("当前浏览器环境不支持摄像头（页面必须通过 HTTPS 访问，请使用系统自带浏览器）");
-            }
-
-            // 3) 确保扫码库已加载（不在页面加载时占用摄像头权限，避免 iOS 重复申请卡死）
-            await ensureHtml5Qrcode();
-
-            if (placeholder) placeholder.style.display = "none";
-
-            html5QrcodeScanner = new Html5Qrcode("reader");
-            const cfg = { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 };
-            const onScan = (text) => {
-                // 同一 QR 在画面停留期间 html5-qrcode 会反复回调，这里"滑动去重 + 防重入"
-                // 双保险，避免结果弹窗还开着 / 确认框刚关时同一张码又触发一轮核验提示
-                if (_scanBusy) return;         // 上一轮核验（含确认弹窗、云端写入）还没结束
-                if (!dedupeScan(text)) return; // 同一张码持续在镜头前：滑动窗口去重
-                _scanBusy = true;
-                Promise.resolve(processCheckin(text))
-                    .catch(() => { /* 错误分支已在 processCheckin 内提示 */ })
-                    .finally(() => {
-                        _scanBusy = false;
-                        // 以核验结束时刻刷新去重时间戳：吞掉 confirm 弹窗期间积压、
-                        // 刚刚才集中送达的同一码回调
-                        _scanDedupAt = Date.now();
-                    });
-            };
-
-            // 4) 优先后置摄像头；个别机型不支持 facingMode 时，回退为枚举设备ID
-            try {
-                await html5QrcodeScanner.start({ facingMode: "environment" }, cfg, onScan, () => {});
-            } catch (e1) {
-                const devices = await Html5Qrcode.getCameras();
-                if (!devices || devices.length === 0) throw e1;
-                await html5QrcodeScanner.start(devices[devices.length - 1].id, cfg, onScan, () => {});
-            }
-
-            isScannerRunning = true;
-            btn.innerText = "关闭摄像头";
-            btn.className = "flex-1 bg-rose-600 text-white py-2 rounded-lg font-medium hover:bg-rose-700 transition text-sm";
-
+            await startScannerAsync();
         } catch (err) {
             let msg = err && err.message ? err.message : String(err);
             if (err && (err.name === 'NotAllowedError' || /permission|denied|拒绝/i.test(msg))) {
@@ -1037,8 +1182,104 @@
             }
             alert(`摄像头无法启动：${msg}\n\n您可以继续使用手动输入或外接扫码枪模式！`);
             isScannerRunning = false;
+            html5QrcodeScanner = null;
             btn.innerText = "开启摄像头";
-            if (placeholder) placeholder.style.display = "block";
+            ensureReaderPlaceholder();
+        }
+    }
+
+    // ---------------- 5.5 取景画面看门狗 ----------------
+    // 部分手机浏览器（尤其 iOS Safari / 各类 WebView）在扫码触发弹窗、切后台再回来等
+    // 场景后，<video> 画面会冻结或视频轨道被系统静音：画面停在最后一帧，无法再解码，
+    // 只能手动关摄像头再开。看门狗每 2.5 秒体检一次取景流，发现异常自动重建摄像头——
+    // 把"手动关闭重开"变成自动完成，扫码不再被锁死。
+    let _watchdogTimer = null;
+    let _watchdogRestarting = false;
+    let _watchdogLastVideoTime = -1;
+    let _watchdogFrozenCount = 0;
+    const WATCHDOG_INTERVAL_MS = 2500;
+
+    function getScannerVideo() {
+        const el = document.getElementById('reader');
+        return el ? el.querySelector('video') : null;
+    }
+
+    function startWatchdog() {
+        stopWatchdog();
+        _watchdogLastVideoTime = -1;
+        _watchdogFrozenCount = 0;
+        _watchdogTimer = setInterval(watchdogTick, WATCHDOG_INTERVAL_MS);
+    }
+
+    function stopWatchdog() {
+        if (_watchdogTimer) { clearInterval(_watchdogTimer); _watchdogTimer = null; }
+    }
+
+    async function watchdogTick() {
+        // 页面在后台时视频本来就会暂停，不判死、也不在后台动摄像头
+        if (document.hidden || _watchdogRestarting || !isScannerRunning || !html5QrcodeScanner) return;
+
+        // 体检 1：扫码器内部状态应保持 SCANNING(2)
+        try {
+            if (html5QrcodeScanner.getState() !== 2) {
+                await restartFrozenScanner('扫码器状态异常');
+                return;
+            }
+        } catch (e) { /* getState 不可用则跳过此项检查 */ }
+
+        const video = getScannerVideo();
+        if (!video) return;
+
+        // 体检 2：视频轨道被系统中断（ended / muted）
+        const stream = video.srcObject;
+        const track = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
+        if (track && (track.readyState === 'ended' || track.muted)) {
+            await restartFrozenScanner('摄像头轨道被系统中断');
+            return;
+        }
+
+        // 体检 3：画面播放时间戳连续两次（约 5 秒）不前进 → 画面冻结
+        const t = video.currentTime;
+        if (video.readyState >= 2 && t === _watchdogLastVideoTime) {
+            _watchdogFrozenCount++;
+            if (_watchdogFrozenCount >= 2) {
+                await restartFrozenScanner('取景画面卡死');
+                return;
+            }
+        } else {
+            _watchdogFrozenCount = 0;
+        }
+        _watchdogLastVideoTime = t;
+    }
+
+    async function restartFrozenScanner(reason) {
+        if (_watchdogRestarting || !isScannerRunning) return;
+        _watchdogRestarting = true;
+        stopWatchdog();
+        appendScanLog('warning', '系统', `检测到${reason}，正在自动恢复摄像头…`);
+        try {
+            if (html5QrcodeScanner) {
+                try { await html5QrcodeScanner.stop(); } catch (e) { /* 已断开则忽略 */ }
+            }
+            html5QrcodeScanner = null;
+            await startScannerAsync();
+        } catch (e) {
+            // 自动恢复失败：回到"摄像头已关闭"状态，提示手动处理
+            appendScanLog('error', '系统', '自动恢复失败，请手动关闭再开启摄像头');
+            if (html5QrcodeScanner) {
+                try { await html5QrcodeScanner.stop(); } catch (e2) { /* 忽略 */ }
+            }
+            html5QrcodeScanner = null;
+            isScannerRunning = false;
+            const btn = document.getElementById('btn-toggle-cam');
+            if (btn) {
+                btn.innerText = "开启摄像头";
+                btn.className = "flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition text-sm";
+            }
+            ensureReaderPlaceholder();
+            stopWatchdog();
+        } finally {
+            _watchdogRestarting = false;
         }
     }
 
