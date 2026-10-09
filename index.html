@@ -558,12 +558,19 @@
     }
     function tripShort(no) { return 'T' + Number(no); }
 
-    // 某趟的应乘 / 已乘 / 未乘（对已给出的名单子集统计）
+    // 某趟的应乘 / 已乘 / 未乘 / 补录（对已给出的名单子集统计）
+    //
+    // 「补录」必须逐人判定 = 本趟实乘、但不在本趟应乘名单里的人（计划外上车）。
+    // 不能用 `boarded - planned` 这种「整组相减」：只要同一统计范围内有 1 个人
+    // 「应乘未乘」，就会把 1 个人的「计划外补录」抵消成 0，表现为
+    // 选「全部车辆」时补录凭空消失、切到具体某辆车又冒出来
+    // （2026-10-09 用户反馈：第二趟 + 全部 → 缺补录，但 2 号车有 1 个补录）。
     function tripCounts(list, no) {
         const planned = list.filter(u => isPlanned(u, no)).length;
         const boarded = list.filter(u => isBoarded(u, no)).length;
         const pending = list.filter(u => isPlanned(u, no) && !isBoarded(u, no)).length;
-        return { planned, boarded, pending, extra: Math.max(0, boarded - planned) };
+        const extra   = list.filter(u => isBoarded(u, no) && !isPlanned(u, no)).length;
+        return { planned, boarded, pending, extra };
     }
 
     // ---------------- 2. 页面加载与实时订阅 ----------------
