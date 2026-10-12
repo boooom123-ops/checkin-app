@@ -401,7 +401,7 @@
                                         <button type="button" class="filter-chip active" data-value="1" title="第一趟 · 10.14 Anandi Hotel → Huangpu River Cruise">第一趟</button>
                                         <button type="button" class="filter-chip" data-value="2" title="第二趟 · 10.14 Huangpu River Cruise → Anandi Hotel">第二趟</button>
                                         <button type="button" class="filter-chip" data-value="3" title="第三趟 · 10.15 RBCN → UAES">第三趟</button>
-                                        <button type="button" class="filter-chip" data-value="4" title="第四趟 · 10.15 UAES → RBCN">第四趟</button>
+                                        <button type="button" class="filter-chip" data-value="4" title="第四趟 · 10.15 UAES → Anandi Hotel">第四趟</button>
                                     </div>
                                 </div>
                                 <div class="flex flex-wrap items-center gap-2 text-xs">
@@ -536,14 +536,14 @@
 
     // ---------------- 1.5 行程与巴士配置 ----------------
     // 行程共四趟：第一天两趟（Anandi Hotel→Huangpu River Cruise、Huangpu River Cruise→Anandi Hotel），
-    //              第二天两趟（RBCN→UAES、UAES→RBCN）。
+    //              第二天两趟（RBCN→UAES、UAES→Anandi Hotel）。
     // 每天两辆车（BUS 1 / BUS 2）跑完全相同的行程，同一人员两天的巴士号统一 → bus_no 为单值。
     // 每人的「应乘趟次」由 trip1 / trip2 / trip3 / trip4 四个标记决定（人员不一定乘坐全部四趟）。
     const TRIPS = [
         { no: 1, label: '第一趟', day: '10.14', route: 'Anandi Hotel → Huangpu River Cruise' },
         { no: 2, label: '第二趟', day: '10.14', route: 'Huangpu River Cruise → Anandi Hotel' },
         { no: 3, label: '第三趟', day: '10.15', route: 'RBCN → UAES' },
-        { no: 4, label: '第四趟', day: '10.15', route: 'UAES → RBCN' }
+        { no: 4, label: '第四趟', day: '10.15', route: 'UAES → Anandi Hotel' }
     ];
     const BUS_NUMBERS = [1, 2];   // 现只有两辆车；如需增减车辆改这里（同时改筛选芯片）
 
@@ -1296,7 +1296,7 @@
     // 四趟标记列：Y/N（也接受 是/否、1/0、TRUE/FALSE），留空视为 N
     function downloadTemplate() {
         const rows = [
-            ["姓名", "部门", "BUS No.", "第一趟 (10.14 Anandi Hotel→Huangpu River Cruise)", "第二趟 (10.14 Huangpu River Cruise→Anandi Hotel)", "第三趟 (10.15 RBCN→UAES)", "第四趟 (10.15 UAES→RBCN)", "邮箱"],
+            ["姓名", "部门", "BUS No.", "第一趟 (10.14 Anandi Hotel→Huangpu River Cruise)", "第二趟 (10.14 Huangpu River Cruise→Anandi Hotel)", "第三趟 (10.15 RBCN→UAES)", "第四趟 (10.15 UAES→Anandi Hotel)", "邮箱"],
             ["张三", "研发部", "1", "Y", "Y", "Y", "Y", "zhangsan@company.com"],
             ["李四", "市场部", "2", "Y", "N", "Y", "N", "lisi@company.com"],
             ["王五", "财务部", "2", "N", "N", "Y", "Y", "wangwu@company.com"]
